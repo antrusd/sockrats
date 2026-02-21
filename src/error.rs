@@ -172,16 +172,53 @@ mod tests {
             Socks5ReplyCode::GeneralFailure
         );
         assert_eq!(
+            Socks5ReplyCode::try_from(0x02).unwrap(),
+            Socks5ReplyCode::ConnectionNotAllowed
+        );
+        assert_eq!(
+            Socks5ReplyCode::try_from(0x03).unwrap(),
+            Socks5ReplyCode::NetworkUnreachable
+        );
+        assert_eq!(
+            Socks5ReplyCode::try_from(0x04).unwrap(),
+            Socks5ReplyCode::HostUnreachable
+        );
+        assert_eq!(
             Socks5ReplyCode::try_from(0x05).unwrap(),
             Socks5ReplyCode::ConnectionRefused
         );
+        assert_eq!(
+            Socks5ReplyCode::try_from(0x06).unwrap(),
+            Socks5ReplyCode::TtlExpired
+        );
+        assert_eq!(
+            Socks5ReplyCode::try_from(0x07).unwrap(),
+            Socks5ReplyCode::CommandNotSupported
+        );
+        assert_eq!(
+            Socks5ReplyCode::try_from(0x08).unwrap(),
+            Socks5ReplyCode::AddressTypeNotSupported
+        );
+    }
+
+    #[test]
+    fn test_socks5_reply_code_from_u8_invalid() {
+        assert!(Socks5ReplyCode::try_from(0xFF).is_err());
+        assert!(Socks5ReplyCode::try_from(0x09).is_err());
+        assert!(Socks5ReplyCode::try_from(100).is_err());
     }
 
     #[test]
     fn test_socks5_reply_code_to_u8() {
         assert_eq!(u8::from(Socks5ReplyCode::Succeeded), 0x00);
         assert_eq!(u8::from(Socks5ReplyCode::GeneralFailure), 0x01);
+        assert_eq!(u8::from(Socks5ReplyCode::ConnectionNotAllowed), 0x02);
+        assert_eq!(u8::from(Socks5ReplyCode::NetworkUnreachable), 0x03);
+        assert_eq!(u8::from(Socks5ReplyCode::HostUnreachable), 0x04);
         assert_eq!(u8::from(Socks5ReplyCode::ConnectionRefused), 0x05);
+        assert_eq!(u8::from(Socks5ReplyCode::TtlExpired), 0x06);
+        assert_eq!(u8::from(Socks5ReplyCode::CommandNotSupported), 0x07);
+        assert_eq!(u8::from(Socks5ReplyCode::AddressTypeNotSupported), 0x08);
     }
 
     #[test]
@@ -192,7 +229,13 @@ mod tests {
         let err = io::Error::new(io::ErrorKind::TimedOut, "timeout");
         assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::HostUnreachable);
 
+        let err = io::Error::new(io::ErrorKind::AddrNotAvailable, "addr not available");
+        assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::HostUnreachable);
+
         let err = io::Error::new(io::ErrorKind::Other, "other");
+        assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::GeneralFailure);
+
+        let err = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
         assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::GeneralFailure);
     }
 
@@ -203,6 +246,38 @@ mod tests {
 
         let err = SocksRatError::Protocol("bad protocol".to_string());
         assert_eq!(format!("{}", err), "Protocol error: bad protocol");
+
+        let err = SocksRatError::Auth("auth failed".to_string());
+        assert_eq!(format!("{}", err), "Authentication error: auth failed");
+
+        let err = SocksRatError::Connection("connection error".to_string());
+        assert_eq!(format!("{}", err), "Connection error: connection error");
+
+        let err = SocksRatError::Transport("transport error".to_string());
+        assert_eq!(format!("{}", err), "Transport error: transport error");
+
+        let err = SocksRatError::Pool("pool error".to_string());
+        assert_eq!(format!("{}", err), "Pool error: pool error");
+
+        let err = SocksRatError::Timeout("timeout".to_string());
+        assert_eq!(format!("{}", err), "Timeout: timeout");
+
+        let err = SocksRatError::Serialization("serialization error".to_string());
+        assert_eq!(format!("{}", err), "Serialization error: serialization error");
+    }
+
+    #[test]
+    fn test_socksrat_error_from_io() {
+        let io_err = io::Error::new(io::ErrorKind::Other, "io error");
+        let err: SocksRatError = io_err.into();
+        assert!(matches!(err, SocksRatError::Io(_)));
+    }
+
+    #[test]
+    fn test_socksrat_error_from_socks5() {
+        let socks5_err = Socks5Error::AuthFailed;
+        let err: SocksRatError = socks5_err.into();
+        assert!(matches!(err, SocksRatError::Socks5(_)));
     }
 
     #[test]
@@ -212,5 +287,45 @@ mod tests {
 
         let err = Socks5Error::NoAcceptableMethod;
         assert_eq!(format!("{}", err), "No acceptable authentication method");
+
+        let err = Socks5Error::AuthFailed;
+        assert_eq!(format!("{}", err), "Authentication failed");
+
+        let err = Socks5Error::CommandNotSupported(0xFF);
+        assert_eq!(format!("{}", err), "Command not supported: 255");
+
+        let err = Socks5Error::AddressTypeNotSupported(0x99);
+        assert_eq!(format!("{}", err), "Address type not supported: 153");
+
+        let err = Socks5Error::ConnectionRefused;
+        assert_eq!(format!("{}", err), "Connection refused");
+
+        let err = Socks5Error::HostUnreachable;
+        assert_eq!(format!("{}", err), "Host unreachable");
+
+        let err = Socks5Error::NetworkUnreachable;
+        assert_eq!(format!("{}", err), "Network unreachable");
+
+        let err = Socks5Error::GeneralFailure;
+        assert_eq!(format!("{}", err), "General SOCKS server failure");
+
+        let err = Socks5Error::InvalidAddress("bad addr".to_string());
+        assert_eq!(format!("{}", err), "Invalid address: bad addr");
+
+        let err = Socks5Error::InvalidDomain("bad.domain".to_string());
+        assert_eq!(format!("{}", err), "Invalid domain name: bad.domain");
+    }
+
+    #[test]
+    fn test_socks5_reply_code_clone_copy() {
+        let code = Socks5ReplyCode::Succeeded;
+        let code2 = code;
+        assert_eq!(code, code2);
+    }
+
+    #[test]
+    fn test_socks5_reply_code_debug() {
+        let code = Socks5ReplyCode::Succeeded;
+        assert_eq!(format!("{:?}", code), "Succeeded");
     }
 }

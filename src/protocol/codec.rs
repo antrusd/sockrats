@@ -241,13 +241,191 @@ impl UdpTraffic {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
 
     #[tokio::test]
-    async fn test_hello_roundtrip() {
-        let hello = Hello::control_channel("test-service");
-        let _serialized = bincode::serialize(&hello).unwrap();
-        // This won't work directly since Cursor isn't AsyncRead + AsyncWrite
-        // For proper testing, we'd use tokio-test or a proper mock
+    async fn test_hello_control_channel_roundtrip() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        let original = Hello::control_channel("test-service");
+
+        // Write from client
+        write_hello(&mut client, &original).await.unwrap();
+
+        // Read from server
+        let received = read_hello(&mut server).await.unwrap();
+        assert_eq!(original, received);
+    }
+
+    #[tokio::test]
+    async fn test_hello_data_channel_roundtrip() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        let session_key = [42u8; 32];
+        let original = Hello::data_channel(session_key);
+
+        write_hello(&mut client, &original).await.unwrap();
+        let received = read_hello(&mut server).await.unwrap();
+        assert_eq!(original, received);
+    }
+
+    #[tokio::test]
+    async fn test_hello_version_mismatch() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        // Create hello with wrong version
+        let wrong_version: u8 = 99;
+        let digest = super::super::digest::digest(b"test");
+        let hello = Hello::ControlChannelHello(wrong_version, digest);
+
+        write_hello(&mut client, &hello).await.unwrap();
+
+        // Should fail with version mismatch
+        let result = read_hello(&mut server).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Protocol version mismatched"));
+    }
+
+    #[tokio::test]
+    async fn test_auth_roundtrip() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        let nonce = [42u8; 32];
+        let original = Auth::new("my-token", &nonce);
+
+        write_auth(&mut client, &original).await.unwrap();
+        let received = read_auth(&mut server).await.unwrap();
+        assert_eq!(original, received);
+    }
+
+    #[tokio::test]
+    async fn test_ack_ok_roundtrip() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_ack(&mut client, &Ack::Ok).await.unwrap();
+        let received = read_ack(&mut server).await.unwrap();
+        assert_eq!(Ack::Ok, received);
+    }
+
+    #[tokio::test]
+    async fn test_ack_service_not_exist_roundtrip() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_ack(&mut client, &Ack::ServiceNotExist).await.unwrap();
+        let received = read_ack(&mut server).await.unwrap();
+        assert_eq!(Ack::ServiceNotExist, received);
+    }
+
+    #[tokio::test]
+    async fn test_ack_auth_failed_roundtrip() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_ack(&mut client, &Ack::AuthFailed).await.unwrap();
+        let received = read_ack(&mut server).await.unwrap();
+        assert_eq!(Ack::AuthFailed, received);
+    }
+
+    #[tokio::test]
+    async fn test_control_cmd_create_data_channel() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_control_cmd(&mut client, &ControlChannelCmd::CreateDataChannel)
+            .await
+            .unwrap();
+        let received = read_control_cmd(&mut server).await.unwrap();
+        assert_eq!(ControlChannelCmd::CreateDataChannel, received);
+    }
+
+    #[tokio::test]
+    async fn test_control_cmd_heartbeat() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_control_cmd(&mut client, &ControlChannelCmd::HeartBeat)
+            .await
+            .unwrap();
+        let received = read_control_cmd(&mut server).await.unwrap();
+        assert_eq!(ControlChannelCmd::HeartBeat, received);
+    }
+
+    #[tokio::test]
+    async fn test_data_cmd_start_forward_tcp() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_data_cmd(&mut client, &DataChannelCmd::StartForwardTcp)
+            .await
+            .unwrap();
+        let received = read_data_cmd(&mut server).await.unwrap();
+        assert_eq!(DataChannelCmd::StartForwardTcp, received);
+    }
+
+    #[tokio::test]
+    async fn test_data_cmd_start_forward_udp() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        write_data_cmd(&mut client, &DataChannelCmd::StartForwardUdp)
+            .await
+            .unwrap();
+        let received = read_data_cmd(&mut server).await.unwrap();
+        assert_eq!(DataChannelCmd::StartForwardUdp, received);
+    }
+
+    #[tokio::test]
+    async fn test_udp_traffic_write_and_read() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        let from = "127.0.0.1:8080".parse().unwrap();
+        let data = Bytes::from("test data");
+        let traffic = UdpTraffic {
+            from,
+            data: data.clone(),
+        };
+
+        // Write traffic
+        traffic.write(&mut client).await.unwrap();
+
+        // Read header length
+        let hdr_len = server.read_u8().await.unwrap();
+
+        // Read traffic
+        let received = UdpTraffic::read(&mut server, hdr_len).await.unwrap();
+        assert_eq!(traffic.from, received.from);
+        assert_eq!(traffic.data, received.data);
+    }
+
+    #[tokio::test]
+    async fn test_udp_traffic_write_slice() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        let from = "192.168.1.1:9090".parse().unwrap();
+        let data = b"slice data";
+
+        UdpTraffic::write_slice(&mut client, from, data)
+            .await
+            .unwrap();
+
+        let hdr_len = server.read_u8().await.unwrap();
+        let received = UdpTraffic::read(&mut server, hdr_len).await.unwrap();
+
+        assert_eq!(from, received.from);
+        assert_eq!(data, received.data.as_ref());
+    }
+
+    #[tokio::test]
+    async fn test_udp_traffic_large_payload() {
+        let (mut client, mut server) = tokio::io::duplex(65536);
+
+        let from = "10.0.0.1:5000".parse().unwrap();
+        let data = vec![0xAB; 60000]; // Large payload
+
+        UdpTraffic::write_slice(&mut client, from, &data)
+            .await
+            .unwrap();
+
+        let hdr_len = server.read_u8().await.unwrap();
+        let received = UdpTraffic::read(&mut server, hdr_len).await.unwrap();
+
+        assert_eq!(from, received.from);
+        assert_eq!(data.len(), received.data.len());
     }
 
     #[test]

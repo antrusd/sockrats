@@ -158,4 +158,190 @@ mod tests {
         assert_eq!(AUTH_SUCCESS, 0);
         assert_eq!(AUTH_FAILURE, 1);
     }
+
+    #[tokio::test]
+    async fn test_authenticate_success() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let request = create_auth_request("testuser", "testpass");
+
+        // Write request from client
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let result = PasswordAuth::authenticate(&mut server, "testuser", "testpass").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_wrong_password() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let request = create_auth_request("user", "wrongpass");
+
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let result = PasswordAuth::authenticate(&mut server, "user", "correctpass").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Authentication failed"));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_wrong_username() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let request = create_auth_request("wronguser", "pass");
+
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let result = PasswordAuth::authenticate(&mut server, "correctuser", "pass").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Authentication failed"));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_invalid_version() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let mut request = Vec::new();
+        request.push(0xFF); // Invalid version
+        request.push(4);
+        request.extend_from_slice(b"user");
+        request.push(4);
+        request.extend_from_slice(b"pass");
+
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let result = PasswordAuth::authenticate(&mut server, "user", "pass").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid auth version"));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_zero_username_length() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let mut request = Vec::new();
+        request.push(SOCKS5_AUTH_VERSION);
+        request.push(0); // Zero username length
+        request.push(4);
+        request.extend_from_slice(b"pass");
+
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let result = PasswordAuth::authenticate(&mut server, "user", "pass").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid username length"));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_zero_password_length() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let mut request = Vec::new();
+        request.push(SOCKS5_AUTH_VERSION);
+        request.push(4);
+        request.extend_from_slice(b"user");
+        request.push(0); // Zero password length
+
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let result = PasswordAuth::authenticate(&mut server, "user", "pass").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid password length"));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_password_with_config_success() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+        let request = create_auth_request("myuser", "mypass");
+
+        use tokio::io::AsyncWriteExt;
+        client.write_all(&request).await.unwrap();
+
+        let config = SocksConfig {
+            username: Some("myuser".to_string()),
+            password: Some("mypass".to_string()),
+            auth_required: true,
+            dns_resolve: true,
+            allow_udp: false,
+            request_timeout: 10,
+        };
+
+        let result = authenticate_password(&mut server, &config).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_password_no_username_in_config() {
+        let mut stream = tokio::io::duplex(1024).0;
+
+        let config = SocksConfig {
+            username: None,
+            password: Some("pass".to_string()),
+            auth_required: true,
+            dns_resolve: true,
+            allow_udp: false,
+            request_timeout: 10,
+        };
+
+        let result = authenticate_password(&mut stream, &config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Username not configured"));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_password_no_password_in_config() {
+        let mut stream = tokio::io::duplex(1024).0;
+
+        let config = SocksConfig {
+            username: Some("user".to_string()),
+            password: None,
+            auth_required: true,
+            dns_resolve: true,
+            allow_udp: false,
+            request_timeout: 10,
+        };
+
+        let result = authenticate_password(&mut stream, &config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Password not configured"));
+    }
+
+    #[tokio::test]
+    async fn test_send_auth_result_success() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        // Spawn task to send auth result
+        let send_task = tokio::spawn(async move {
+            send_auth_result(&mut server, AUTH_SUCCESS).await
+        });
+
+        // Read the response
+        use tokio::io::AsyncReadExt;
+        let mut buf = [0u8; 2];
+        client.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf[0], SOCKS5_AUTH_VERSION);
+        assert_eq!(buf[1], AUTH_SUCCESS);
+
+        assert!(send_task.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_send_auth_result_failure() {
+        let (mut client, mut server) = tokio::io::duplex(1024);
+
+        // Spawn task to send auth result
+        let send_task = tokio::spawn(async move {
+            send_auth_result(&mut server, AUTH_FAILURE).await
+        });
+
+        // Read the response
+        use tokio::io::AsyncReadExt;
+        let mut buf = [0u8; 2];
+        client.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf[0], SOCKS5_AUTH_VERSION);
+        assert_eq!(buf[1], AUTH_FAILURE);
+
+        assert!(send_task.await.unwrap().is_ok());
+    }
 }

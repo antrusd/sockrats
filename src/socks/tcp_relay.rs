@@ -118,6 +118,7 @@ fn io_error_to_reply_code(error: &std::io::Error) -> u8 {
 mod tests {
     use super::*;
     use std::io;
+    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
 
     #[test]
     fn test_io_error_to_reply_code() {
@@ -136,10 +137,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_io_error_to_reply_code_all_variants() {
+        assert_eq!(
+            io_error_to_reply_code(&io::Error::from(io::ErrorKind::ConnectionRefused)),
+            SOCKS5_REPLY_CONNECTION_REFUSED
+        );
+        assert_eq!(
+            io_error_to_reply_code(&io::Error::from(io::ErrorKind::TimedOut)),
+            SOCKS5_REPLY_HOST_UNREACHABLE
+        );
+        assert_eq!(
+            io_error_to_reply_code(&io::Error::from(io::ErrorKind::AddrNotAvailable)),
+            SOCKS5_REPLY_HOST_UNREACHABLE
+        );
+        assert_eq!(
+            io_error_to_reply_code(&io::Error::from(io::ErrorKind::PermissionDenied)),
+            SOCKS5_REPLY_CONNECTION_NOT_ALLOWED
+        );
+        assert_eq!(
+            io_error_to_reply_code(&io::Error::from(io::ErrorKind::WouldBlock)),
+            SOCKS5_REPLY_GENERAL_FAILURE
+        );
+    }
+
     #[tokio::test]
     async fn test_relay_tcp_echo() {
-        use tokio::io::{duplex, AsyncWriteExt};
-
         // Create two pairs of duplex streams
         let (mut client_a, server_a) = duplex(1024);
         let (mut client_b, server_b) = duplex(1024);
@@ -164,5 +187,154 @@ mod tests {
 
         // Wait for relay to finish
         let _ = tokio::time::timeout(Duration::from_millis(100), relay_handle).await;
+    }
+
+    #[tokio::test]
+    async fn test_relay_tcp_bidirectional() {
+        let (mut client_a, server_a) = duplex(1024);
+        let (mut client_b, server_b) = duplex(1024);
+
+        let relay_handle = tokio::spawn(async move {
+            relay_tcp(server_a, server_b).await
+        });
+
+        // Write from A to B
+        client_a.write_all(b"message A->B").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+
+        let mut buf_b = vec![0u8; 12];
+        client_b.read_exact(&mut buf_b).await.unwrap();
+        assert_eq!(&buf_b, b"message A->B");
+
+        // Write from B to A
+        client_b.write_all(b"message B->A").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+
+        let mut buf_a = vec![0u8; 12];
+        client_a.read_exact(&mut buf_a).await.unwrap();
+        assert_eq!(&buf_a, b"message B->A");
+
+        drop(client_a);
+        drop(client_b);
+
+        let _ = tokio::time::timeout(Duration::from_millis(100), relay_handle).await;
+    }
+
+    #[tokio::test]
+    async fn test_relay_tcp_large_data() {
+        let (mut client_a, server_a) = duplex(65536);
+        let (mut client_b, server_b) = duplex(65536);
+
+        let relay_handle = tokio::spawn(async move {
+            relay_tcp(server_a, server_b).await
+        });
+
+        // Send large data
+        let large_data = vec![0xAB; 50000];
+        client_a.write_all(&large_data).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        let mut received = vec![0u8; 50000];
+        client_b.read_exact(&mut received).await.unwrap();
+        assert_eq!(received, large_data);
+
+        drop(client_a);
+        drop(client_b);
+
+        let _ = tokio::time::timeout(Duration::from_millis(100), relay_handle).await;
+    }
+
+    #[tokio::test]
+    async fn test_relay_tcp_closes_on_eof() {
+        let (mut client_a, server_a) = duplex(1024);
+        let (client_b, server_b) = duplex(1024);
+
+        let relay_handle = tokio::spawn(async move {
+            relay_tcp(server_a, server_b).await
+        });
+
+        // Send some data then close
+        client_a.write_all(b"data").await.unwrap();
+        drop(client_a);
+        drop(client_b);
+
+        // Relay should finish
+        let result = tokio::time::timeout(Duration::from_millis(100), relay_handle).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_relay_tcp_empty_transfer() {
+        let (client_a, server_a) = duplex(1024);
+        let (client_b, server_b) = duplex(1024);
+
+        let relay_handle = tokio::spawn(async move {
+            relay_tcp(server_a, server_b).await
+        });
+
+        // Close immediately without writing
+        drop(client_a);
+        drop(client_b);
+
+        // Relay should finish quickly
+        let result = tokio::time::timeout(Duration::from_millis(100), relay_handle).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tcp_connect_invalid_address() {
+        let (client, _server) = duplex(1024);
+
+        let config = SocksConfig {
+            username: None,
+            password: None,
+            auth_required: false,
+            dns_resolve: false,
+            allow_udp: false,
+            request_timeout: 1,
+        };
+
+        // Try to connect to an invalid port (0)
+        let target = TargetAddr::Ip("0.0.0.0:0".parse().unwrap());
+        let result = handle_tcp_connect(client, target, &config).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tcp_connect_connection_refused() {
+        let (client, _server) = duplex(1024);
+
+        let config = SocksConfig {
+            username: None,
+            password: None,
+            auth_required: false,
+            dns_resolve: false,
+            allow_udp: false,
+            request_timeout: 1,
+        };
+
+        // Try to connect to a port that's not listening
+        let target = TargetAddr::Ip("127.0.0.1:9".parse().unwrap());
+        let result = handle_tcp_connect(client, target, &config).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_handle_tcp_connect_unresolvable_domain() {
+        let (client, _server) = duplex(1024);
+
+        let config = SocksConfig {
+            username: None,
+            password: None,
+            auth_required: false,
+            dns_resolve: true,
+            allow_udp: false,
+            request_timeout: 1,
+        };
+
+        // Try to resolve an invalid domain
+        let target = TargetAddr::Domain("this-domain-does-not-exist-12345.invalid".to_string(), 80);
+        let result = handle_tcp_connect(client, target, &config).await;
+        assert!(result.is_err());
     }
 }
