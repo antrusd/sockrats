@@ -1,0 +1,8 @@
+# Minimal SocksRat Configuration
+#
+# This is the minimal configuration required to run SocksRat.
+
+[client]
+remote_addr = "server.example.com:2333"
+service_name = "socks5"
+token = "your-secret-token"

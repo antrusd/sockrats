@@ -1,0 +1,93 @@
+# SocksRat Example Configuration
+#
+# This file shows all available configuration options.
+# Copy this file and modify for your deployment.
+
+[client]
+# Remote rathole server address (required)
+remote_addr = "server.example.com:2333"
+
+# Service name - must match server configuration (required)
+service_name = "socks5"
+
+# Authentication token - must match server configuration (required)
+token = "your-secret-token"
+
+# Heartbeat timeout in seconds (default: 40)
+heartbeat_timeout = 40
+
+# Transport configuration
+[client.transport]
+# Transport type: "tcp", "tls", "noise", or "websocket"
+type = "tcp"
+
+# TCP transport options
+[client.transport.tcp]
+# Enable TCP_NODELAY for lower latency
+nodelay = true
+# TCP keepalive timeout in seconds
+keepalive_secs = 20
+# TCP keepalive interval in seconds
+keepalive_interval = 8
+
+# TLS transport options (uncomment to use)
+# [client.transport.tls]
+# hostname = "server.example.com"
+# trusted_root = "/path/to/ca.crt"
+# skip_verify = false  # WARNING: Only use for testing!
+
+# Noise protocol options (uncomment to use)
+# [client.transport.noise]
+# pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
+# remote_public_key = "base64-encoded-server-public-key"
+# local_private_key = "base64-encoded-client-private-key"  # Optional
+
+# WebSocket transport options (uncomment to use)
+# [client.transport.websocket]
+# path = "/"
+# tls = false
+# headers = [["X-Custom-Header", "value"]]
+
+# SOCKS5 server configuration
+[client.socks]
+# Require SOCKS5 client authentication (default: false)
+auth_required = false
+
+# Username for SOCKS5 authentication (if auth_required = true)
+# username = "user"
+
+# Password for SOCKS5 authentication (if auth_required = true)
+# password = "pass"
+
+# Allow UDP ASSOCIATE command (default: false)
+allow_udp = false
+
+# Resolve DNS on the client side (default: true)
+# If false, domain names are passed to the target for resolution
+dns_resolve = true
+
+# Connection timeout for outbound connections in seconds (default: 10)
+request_timeout = 10
+
+# Connection pool configuration
+[client.pool]
+# Minimum number of pre-established TCP channels (default: 2)
+min_tcp_channels = 2
+
+# Maximum number of TCP channels (default: 10)
+max_tcp_channels = 10
+
+# Minimum number of pre-established UDP channels (default: 1)
+min_udp_channels = 1
+
+# Maximum number of UDP channels (default: 5)
+max_udp_channels = 5
+
+# Channel idle timeout in seconds (default: 300)
+idle_timeout = 300
+
+# Health check interval in seconds (default: 30)
+health_check_interval = 30
+
+# Maximum time to wait for a channel from the pool (default: 10)
+acquire_timeout = 10
