@@ -1,0 +1,104 @@
+[package]
+name = "socksrat"
+version = "0.1.0"
+edition = "2021"
+authors = ["SocksRat Contributors"]
+description = "Reverse SOCKS5 tunneling client using rathole protocol"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/antrusd/socksrat"
+keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
+categories = ["network-programming", "command-line-utilities"]
+
+[features]
+default = ["rustls-tls", "noise"]
+
+# TLS support using rustls (pure Rust, easy static linking)
+rustls-tls = ["tokio-rustls", "rustls-pemfile", "rustls-native-certs", "ring"]
+
+# TLS support using native-tls (requires OpenSSL)
+native-tls = ["tokio-native-tls"]
+native-tls-vendored = ["tokio-native-tls", "openssl-vendored"]
+
+# Vendored OpenSSL for static builds
+openssl-vendored = ["openssl/vendored"]
+
+# Noise protocol support
+noise = ["snowstorm", "base64"]
+
+# WebSocket support
+websocket-rustls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "rustls-tls"]
+websocket-native-tls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "native-tls"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Core utilities
+anyhow = "1.0"
+thiserror = "1"
+bytes = { version = "1", features = ["serde"] }
+async-trait = "0.1"
+
+# Configuration
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+clap = { version = "4.0", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Protocol serialization
+bincode = "1"
+sha2 = "0.10"
+lazy_static = "1.4"
+
+# Networking
+socket2 = { version = "0.5", features = ["all"] }
+backoff = { version = "0.4", features = ["tokio"] }
+
+# SOCKS5 protocol
+tokio-stream = "0.1"
+
+# TLS with rustls (default - pure Rust, easy static linking)
+# Using default-features = false to avoid aws-lc-rs which requires macOS SDK for cross-compilation
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = { version = "0.8", optional = true }
+rustls-pemfile = { version = "2.0", optional = true }
+ring = { version = "0.17", optional = true }
+
+# TLS with native-tls (optional)
+tokio-native-tls = { version = "0.3", optional = true }
+openssl = { version = "0.10", optional = true }
+
+# Optional Noise
+snowstorm = { version = "0.4", optional = true, features = ["stream"], default-features = false }
+base64 = { version = "0.22", optional = true }
+
+# Optional WebSocket
+tokio-tungstenite = { version = "0.24", optional = true }
+tokio-util = { version = "0.7", optional = true, features = ["io"] }
+futures-core = { version = "0.3", optional = true }
+futures-sink = { version = "0.3", optional = true }
+
+# Proxy support for outbound connections
+async-http-proxy = { version = "1.2", features = ["runtime-tokio", "basic-auth"] }
+async-socks5 = "0.6"
+url = { version = "2.2", features = ["serde"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+env_logger = "0.11"
+tempfile = "3"
+
+[[bin]]
+name = "socksrat"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"  # Optimize for size
