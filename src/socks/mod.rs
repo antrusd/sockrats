@@ -1,4 +1,4 @@
-//! SOCKS5 module for SocksRat
+//! SOCKS5 module for Sockrats
 //!
 //! This module implements the SOCKS5 protocol for handling proxy requests
 //! through the rathole tunnel. It processes SOCKS5 requests directly on

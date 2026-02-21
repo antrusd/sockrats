@@ -1,4 +1,4 @@
-//! Transport module for SocksRat
+//! Transport module for Sockrats
 //!
 //! This module provides the transport layer abstraction and implementations
 //! for different protocols (TCP, TLS, Noise, WebSocket).

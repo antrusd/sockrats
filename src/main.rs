@@ -1,19 +1,19 @@
-//! SocksRat - Reverse SOCKS5 Tunneling Client
+//! Sockrats - Reverse SOCKS5 Tunneling Client
 //!
-//! This is the main entry point for the SocksRat application.
+//! This is the main entry point for the Sockrats application.
 
 use anyhow::Result;
 use clap::Parser;
-use socksrat::config::load_config;
-use socksrat::client::run_client;
+use sockrats::config::load_config;
+use sockrats::client::run_client;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
-/// SocksRat - Reverse SOCKS5 tunneling client using rathole protocol
+/// Sockrats - Reverse SOCKS5 tunneling client using rathole protocol
 #[derive(Parser, Debug)]
-#[command(name = "socksrat")]
+#[command(name = "sockrats")]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to configuration file
@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = load_config(&args.config)?;
 
-    info!("SocksRat v{}", socksrat::VERSION);
+    info!("Sockrats v{}", sockrats::VERSION);
     info!("Configuration loaded from: {:?}", args.config);
     info!("Connecting to: {}", config.client.remote_addr);
     info!("Service name: {}", config.client.service_name);

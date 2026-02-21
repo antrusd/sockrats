@@ -1,4 +1,4 @@
-//! Test utilities and mocks for SocksRat
+//! Test utilities and mocks for Sockrats
 //!
 //! This module provides common test utilities used across integration tests.
 
@@ -88,15 +88,15 @@ impl TestConfigBuilder {
     }
 
     /// Build the configuration
-    pub fn build(self) -> socksrat::config::Config {
-        socksrat::config::Config {
-            client: socksrat::config::ClientConfig {
+    pub fn build(self) -> sockrats::config::Config {
+        sockrats::config::Config {
+            client: sockrats::config::ClientConfig {
                 remote_addr: self.remote_addr,
                 service_name: self.service_name,
                 token: self.token,
-                transport: socksrat::config::TransportConfig::default(),
+                transport: sockrats::config::TransportConfig::default(),
                 heartbeat_timeout: 40,
-                socks: socksrat::config::SocksConfig {
+                socks: sockrats::config::SocksConfig {
                     auth_required: self.auth_required,
                     username: if self.auth_required {
                         Some("testuser".to_string())
@@ -112,7 +112,7 @@ impl TestConfigBuilder {
                     dns_resolve: true,
                     request_timeout: 10,
                 },
-                pool: socksrat::config::PoolConfig::default(),
+                pool: sockrats::config::PoolConfig::default(),
             },
         }
     }
@@ -120,7 +120,7 @@ impl TestConfigBuilder {
 
 /// Mock SOCKS5 handshake data
 pub mod socks5_mock {
-    use socksrat::socks::*;
+    use sockrats::socks::*;
 
     /// Create a no-auth method selection request
     pub fn create_auth_request_no_auth() -> Vec<u8> {

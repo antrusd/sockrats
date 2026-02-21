@@ -1,13 +1,13 @@
-//! Error types for SocksRat
+//! Error types for Sockrats
 //!
 //! This module defines all custom error types used throughout the application.
 
 use std::io;
 use thiserror::Error;
 
-/// Main error type for SocksRat operations
+/// Main error type for Sockrats operations
 #[derive(Error, Debug)]
-pub enum SocksRatError {
+pub enum SockratsError {
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
@@ -240,44 +240,44 @@ mod tests {
     }
 
     #[test]
-    fn test_socksrat_error_display() {
-        let err = SocksRatError::Config("invalid config".to_string());
+    fn test_sockrats_error_display() {
+        let err = SockratsError::Config("invalid config".to_string());
         assert_eq!(format!("{}", err), "Configuration error: invalid config");
 
-        let err = SocksRatError::Protocol("bad protocol".to_string());
+        let err = SockratsError::Protocol("bad protocol".to_string());
         assert_eq!(format!("{}", err), "Protocol error: bad protocol");
 
-        let err = SocksRatError::Auth("auth failed".to_string());
+        let err = SockratsError::Auth("auth failed".to_string());
         assert_eq!(format!("{}", err), "Authentication error: auth failed");
 
-        let err = SocksRatError::Connection("connection error".to_string());
+        let err = SockratsError::Connection("connection error".to_string());
         assert_eq!(format!("{}", err), "Connection error: connection error");
 
-        let err = SocksRatError::Transport("transport error".to_string());
+        let err = SockratsError::Transport("transport error".to_string());
         assert_eq!(format!("{}", err), "Transport error: transport error");
 
-        let err = SocksRatError::Pool("pool error".to_string());
+        let err = SockratsError::Pool("pool error".to_string());
         assert_eq!(format!("{}", err), "Pool error: pool error");
 
-        let err = SocksRatError::Timeout("timeout".to_string());
+        let err = SockratsError::Timeout("timeout".to_string());
         assert_eq!(format!("{}", err), "Timeout: timeout");
 
-        let err = SocksRatError::Serialization("serialization error".to_string());
+        let err = SockratsError::Serialization("serialization error".to_string());
         assert_eq!(format!("{}", err), "Serialization error: serialization error");
     }
 
     #[test]
-    fn test_socksrat_error_from_io() {
+    fn test_sockrats_error_from_io() {
         let io_err = io::Error::new(io::ErrorKind::Other, "io error");
-        let err: SocksRatError = io_err.into();
-        assert!(matches!(err, SocksRatError::Io(_)));
+        let err: SockratsError = io_err.into();
+        assert!(matches!(err, SockratsError::Io(_)));
     }
 
     #[test]
-    fn test_socksrat_error_from_socks5() {
+    fn test_sockrats_error_from_socks5() {
         let socks5_err = Socks5Error::AuthFailed;
-        let err: SocksRatError = socks5_err.into();
-        assert!(matches!(err, SocksRatError::Socks5(_)));
+        let err: SockratsError = socks5_err.into();
+        assert!(matches!(err, SockratsError::Socks5(_)));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 # Docker image for builds - use rust:1.93.0-alpine3.23 for static builds with musl
 DOCKER_IMAGE := rust:1.93.0-alpine3.23
 DOCKER_IMAGE_OSXCROSS := rust:slim-trixie
-APP_NAME := socksrat
+APP_NAME := sockrats
 
 # Target architectures (musl for static linking)
 LINUX_TARGETS := x86_64-unknown-linux-musl aarch64-unknown-linux-musl
@@ -261,7 +261,7 @@ targets:
 
 # Help
 help:
-	@echo "SocksRat Build System"
+	@echo "Sockrats Build System"
 	@echo ""
 	@echo "Basic targets:"
 	@echo "  make build             - Build for current platform"

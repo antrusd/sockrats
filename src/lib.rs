@@ -1,6 +1,6 @@
-//! # SocksRat - Reverse SOCKS5 Tunneling Client
+//! # Sockrats - Reverse SOCKS5 Tunneling Client
 //!
-//! SocksRat is a Rust-based application that functions as a reverse tunneling
+//! Sockrats is a Rust-based application that functions as a reverse tunneling
 //! client with an embedded SOCKS5 server. It connects to a remote rathole server
 //! and exposes a SOCKS5 proxy through that tunnel, without binding to any local
 //! network interface.
@@ -16,8 +16,8 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use socksrat::config::load_config;
-//! use socksrat::client::run_client;
+//! use sockrats::config::load_config;
+//! use sockrats::client::run_client;
 //! use tokio::sync::broadcast;
 //!
 //! #[tokio::main]
@@ -33,11 +33,11 @@
 //!
 //! The client connects to a rathole server and waits for CreateDataChannel
 //! commands. When a remote SOCKS5 client connects to the rathole server,
-//! the server sends a CreateDataChannel command, and SocksRat establishes
+//! the server sends a CreateDataChannel command, and Sockrats establishes
 //! a data channel to handle the SOCKS5 request.
 //!
 //! ```text
-//! SOCKS5 Client -> Rathole Server -> SocksRat -> Target
+//! SOCKS5 Client -> Rathole Server -> Sockrats -> Target
 //! ```
 
 #![warn(missing_docs)]
@@ -56,9 +56,9 @@ pub mod transport;
 // Re-export commonly used items
 pub use client::run_client;
 pub use config::{load_config, Config};
-pub use error::{Socks5Error, SocksRatError};
+pub use error::{Socks5Error, SockratsError};
 
-/// Version of the SocksRat library
+/// Version of the Sockrats library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Name of the application
@@ -75,6 +75,6 @@ mod tests {
 
     #[test]
     fn test_name() {
-        assert_eq!(NAME, "socksrat");
+        assert_eq!(NAME, "sockrats");
     }
 }

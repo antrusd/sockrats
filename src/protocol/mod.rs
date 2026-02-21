@@ -1,4 +1,4 @@
-//! Protocol module for SocksRat
+//! Protocol module for Sockrats
 //!
 //! This module implements the rathole protocol for communication
 //! with the rathole server. It must be compatible with the rathole

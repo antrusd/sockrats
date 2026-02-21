@@ -1,4 +1,4 @@
-# Test Configuration for SocksRat - SOCKS5 only (legacy single-service mode)
+# Test Configuration for Sockrats - SOCKS5 only (legacy single-service mode)
 # This configuration is used with the test scripts to verify SOCKS5 functionality
 
 [client]

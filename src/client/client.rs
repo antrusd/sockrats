@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-/// Main SocksRat client
+/// Main Sockrats client
 pub struct Client<T: Transport> {
     /// Client configuration
     config: ClientConfig,
@@ -27,7 +27,7 @@ impl<T: Transport + 'static> Client<T> {
 
     /// Run the client until shutdown
     pub async fn run(self, mut shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
-        info!("Starting SocksRat client");
+        info!("Starting Sockrats client");
         info!("Remote server: {}", self.config.remote_addr);
 
         // Determine which services to run

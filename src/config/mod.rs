@@ -1,4 +1,4 @@
-//! Configuration module for SocksRat
+//! Configuration module for Sockrats
 //!
 //! This module provides configuration types and parsing for the client.
 

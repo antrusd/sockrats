@@ -1,4 +1,4 @@
-# Test Configuration for SocksRat - Multi-service mode
+# Test Configuration for Sockrats - Multi-service mode
 # This configuration tests running both SOCKS5 and SSH services simultaneously
 
 [client]

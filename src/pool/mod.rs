@@ -1,4 +1,4 @@
-//! Connection pool module for SocksRat
+//! Connection pool module for Sockrats
 //!
 //! This module provides connection pooling for data channels,
 //! allowing pre-established connections to reduce latency.

@@ -1,4 +1,4 @@
-# SocksRat
+# Sockrats
 
 A Rust-based reverse SOCKS5 tunneling client that connects to a rathole server and exposes a SOCKS5 proxy through the tunnel.
 
@@ -26,7 +26,7 @@ A Rust-based reverse SOCKS5 tunneling client that connects to a rathole server a
 cargo build --release
 
 # Using Docker
-docker build -t socksrat .
+docker build -t sockrats .
 
 # Using Make
 make build
@@ -50,10 +50,10 @@ token = "your-secret-token"
 cargo run -- -c config.toml
 
 # Using the binary
-./target/release/socksrat -c config.toml
+./target/release/sockrats -c config.toml
 
 # Using Docker
-docker run -v ./config.toml:/app/config.toml socksrat -c /app/config.toml
+docker run -v ./config.toml:/app/config.toml sockrats -c /app/config.toml
 ```
 
 ## Rathole Server Configuration
@@ -72,7 +72,7 @@ bind_addr = "0.0.0.0:1080"  # SOCKS5 clients connect here
 
 ## Usage
 
-Once SocksRat is connected to the rathole server, SOCKS5 clients can connect to the server's bind address (e.g., `server:1080`):
+Once Sockrats is connected to the rathole server, SOCKS5 clients can connect to the server's bind address (e.g., `server:1080`):
 
 ```bash
 # Test with curl
@@ -106,7 +106,7 @@ make lint
 
 ## Cross-Platform Builds
 
-SocksRat supports cross-compilation for multiple platforms. All cross-compilation uses the `rust:slim-trixie` Docker image.
+Sockrats supports cross-compilation for multiple platforms. All cross-compilation uses the `rust:slim-trixie` Docker image.
 
 ### Supported Targets
 
@@ -149,13 +149,13 @@ make targets
 Binaries are placed in the `dist/` directory:
 ```
 dist/
-├── x86_64-unknown-linux-gnu/socksrat
-├── x86_64-unknown-linux-musl/socksrat
-├── aarch64-unknown-linux-gnu/socksrat
-├── aarch64-unknown-linux-musl/socksrat
-├── x86_64-pc-windows-gnu/socksrat.exe
-├── x86_64-apple-darwin/socksrat        # Intel Mac
-└── aarch64-apple-darwin/socksrat       # Apple Silicon M1/M2/M3
+├── x86_64-unknown-linux-gnu/sockrats
+├── x86_64-unknown-linux-musl/sockrats
+├── aarch64-unknown-linux-gnu/sockrats
+├── aarch64-unknown-linux-musl/sockrats
+├── x86_64-pc-windows-gnu/sockrats.exe
+├── x86_64-apple-darwin/sockrats        # Intel Mac
+└── aarch64-apple-darwin/sockrats       # Apple Silicon M1/M2/M3
 ```
 
 ### Creating Release Archives
@@ -177,7 +177,7 @@ make build-macos
 
 ### Using Pre-built Binaries
 
-Pre-built binaries are available on the [Releases](https://github.com/antrusd/socksrat/releases) page for:
+Pre-built binaries are available on the [Releases](https://github.com/antrusd/sockrats/releases) page for:
 
 - **Linux**: `.tar.gz` archives for x86_64 and ARM64
 - **Windows**: `.zip` archive for x86_64

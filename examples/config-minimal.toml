@@ -1,6 +1,6 @@
-# Minimal SocksRat Configuration
+# Minimal Sockrats Configuration
 #
-# This is the minimal configuration required to run SocksRat.
+# This is the minimal configuration required to run Sockrats.
 
 [client]
 remote_addr = "server.example.com:2333"

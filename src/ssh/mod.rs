@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use socksrat::ssh::{handle_ssh_on_stream, SshConfig};
+//! use sockrats::ssh::{handle_ssh_on_stream, SshConfig};
 //! use std::sync::Arc;
 //!
 //! async fn example<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(

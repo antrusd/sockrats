@@ -1,6 +1,6 @@
 //! Client configuration types
 //!
-//! Defines the main configuration structures for the SocksRat client.
+//! Defines the main configuration structures for the Sockrats client.
 
 use crate::ssh::SshConfig;
 use serde::{Deserialize, Serialize};

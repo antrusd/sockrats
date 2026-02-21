@@ -1,4 +1,4 @@
-//! Client module for SocksRat
+//! Client module for Sockrats
 //!
 //! This module contains the main client logic for connecting to
 //! the rathole server and handling SOCKS5 requests.

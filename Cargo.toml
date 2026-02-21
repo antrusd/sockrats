@@ -1,12 +1,12 @@
 [package]
-name = "socksrat"
+name = "sockrats"
 version = "0.1.0"
 edition = "2021"
-authors = ["SocksRat Contributors"]
+authors = ["Sockrats Contributors"]
 description = "Reverse SOCKS5 tunneling client using rathole protocol"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/antrusd/socksrat"
+repository = "https://github.com/antrusd/sockrats"
 keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
 categories = ["network-programming", "command-line-utilities"]
 
@@ -103,7 +103,7 @@ env_logger = "0.11"
 tempfile = "3"
 
 [[bin]]
-name = "socksrat"
+name = "sockrats"
 path = "src/main.rs"
 
 [profile.release]

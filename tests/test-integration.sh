@@ -1,5 +1,5 @@
 #!/bin/bash
-# SocksRat Integration Test Script
+# Sockrats Integration Test Script
 # Tests both SOCKS5 and SSH capabilities
 #
 # Prerequisites:
@@ -15,7 +15,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 FIXTURES_DIR="$SCRIPT_DIR/fixtures"
-TMP_DIR="/tmp/socksrat-test-$$"
+TMP_DIR="/tmp/sockrats-test-$$"
 
 # Colors for output
 RED='\033[0;31m'
@@ -32,29 +32,29 @@ TEST_PASSWORD="testpassword"
 
 # PIDs for cleanup
 RATHOLE_PID=""
-SOCKSRAT_SOCKS5_PID=""
-SOCKSRAT_SSH_PID=""
-SOCKSRAT_MULTI_PID=""
+SOCKRATS_SOCKS5_PID=""
+SOCKRATS_SSH_PID=""
+SOCKRATS_MULTI_PID=""
 ECHO_SERVER_PID=""
 
 cleanup() {
     echo -e "\n${YELLOW}Cleaning up...${NC}"
 
-    # Kill all socksrat processes
-    pkill -f "socksrat.*test-socks5.toml" 2>/dev/null || true
-    pkill -f "socksrat.*test-ssh.toml" 2>/dev/null || true
-    pkill -f "socksrat.*test-multi-service.toml" 2>/dev/null || true
+    # Kill all sockrats processes
+    pkill -f "sockrats.*test-socks5.toml" 2>/dev/null || true
+    pkill -f "sockrats.*test-ssh.toml" 2>/dev/null || true
+    pkill -f "sockrats.*test-multi-service.toml" 2>/dev/null || true
 
-    if [ -n "$SOCKSRAT_SOCKS5_PID" ] && kill -0 "$SOCKSRAT_SOCKS5_PID" 2>/dev/null; then
-        kill "$SOCKSRAT_SOCKS5_PID" 2>/dev/null || true
+    if [ -n "$SOCKRATS_SOCKS5_PID" ] && kill -0 "$SOCKRATS_SOCKS5_PID" 2>/dev/null; then
+        kill "$SOCKRATS_SOCKS5_PID" 2>/dev/null || true
     fi
 
-    if [ -n "$SOCKSRAT_SSH_PID" ] && kill -0 "$SOCKSRAT_SSH_PID" 2>/dev/null; then
-        kill "$SOCKSRAT_SSH_PID" 2>/dev/null || true
+    if [ -n "$SOCKRATS_SSH_PID" ] && kill -0 "$SOCKRATS_SSH_PID" 2>/dev/null; then
+        kill "$SOCKRATS_SSH_PID" 2>/dev/null || true
     fi
 
-    if [ -n "$SOCKSRAT_MULTI_PID" ] && kill -0 "$SOCKSRAT_MULTI_PID" 2>/dev/null; then
-        kill "$SOCKSRAT_MULTI_PID" 2>/dev/null || true
+    if [ -n "$SOCKRATS_MULTI_PID" ] && kill -0 "$SOCKRATS_MULTI_PID" 2>/dev/null; then
+        kill "$SOCKRATS_MULTI_PID" 2>/dev/null || true
     fi
 
     if [ -n "$RATHOLE_PID" ] && kill -0 "$RATHOLE_PID" 2>/dev/null; then
@@ -119,20 +119,20 @@ check_prerequisites() {
     log_info "All prerequisites found."
 }
 
-# Find the socksrat binary
-find_socksrat_binary() {
+# Find the sockrats binary
+find_sockrats_binary() {
     # Check dist/ first (for pre-built static binary)
-    if [ -f "$PROJECT_DIR/dist/x86_64-unknown-linux-musl/socksrat" ]; then
-        SOCKSRAT_BIN="$PROJECT_DIR/dist/x86_64-unknown-linux-musl/socksrat"
-    elif [ -f "$PROJECT_DIR/target/release/socksrat" ]; then
-        SOCKSRAT_BIN="$PROJECT_DIR/target/release/socksrat"
-    elif [ -f "$PROJECT_DIR/target/debug/socksrat" ]; then
-        SOCKSRAT_BIN="$PROJECT_DIR/target/debug/socksrat"
+    if [ -f "$PROJECT_DIR/dist/x86_64-unknown-linux-musl/sockrats" ]; then
+        SOCKRATS_BIN="$PROJECT_DIR/dist/x86_64-unknown-linux-musl/sockrats"
+    elif [ -f "$PROJECT_DIR/target/release/sockrats" ]; then
+        SOCKRATS_BIN="$PROJECT_DIR/target/release/sockrats"
+    elif [ -f "$PROJECT_DIR/target/debug/sockrats" ]; then
+        SOCKRATS_BIN="$PROJECT_DIR/target/debug/sockrats"
     else
-        log_error "socksrat binary not found. Run 'cargo build --release' first."
+        log_error "sockrats binary not found. Run 'cargo build --release' first."
         exit 1
     fi
-    log_info "Using socksrat binary: $SOCKSRAT_BIN"
+    log_info "Using sockrats binary: $SOCKRATS_BIN"
 }
 
 # Start echo server for SOCKS5 testing
@@ -170,34 +170,34 @@ start_rathole() {
     fi
 }
 
-# Start socksrat client for SOCKS5
-start_socksrat_socks5() {
-    log_info "Starting socksrat client (SOCKS5)..."
+# Start sockrats client for SOCKS5
+start_sockrats_socks5() {
+    log_info "Starting sockrats client (SOCKS5)..."
 
-    RUST_LOG=info "$SOCKSRAT_BIN" --config "$FIXTURES_DIR/test-socks5.toml" &
-    SOCKSRAT_SOCKS5_PID=$!
+    RUST_LOG=info "$SOCKRATS_BIN" --config "$FIXTURES_DIR/test-socks5.toml" &
+    SOCKRATS_SOCKS5_PID=$!
     sleep 3
 
-    if kill -0 "$SOCKSRAT_SOCKS5_PID" 2>/dev/null; then
-        log_info "SocksRat SOCKS5 client started (PID: $SOCKSRAT_SOCKS5_PID)"
+    if kill -0 "$SOCKRATS_SOCKS5_PID" 2>/dev/null; then
+        log_info "Sockrats SOCKS5 client started (PID: $SOCKRATS_SOCKS5_PID)"
     else
-        log_error "Failed to start socksrat SOCKS5 client"
+        log_error "Failed to start sockrats SOCKS5 client"
         exit 1
     fi
 }
 
-# Start socksrat client for SSH
-start_socksrat_ssh() {
-    log_info "Starting socksrat client (SSH)..."
+# Start sockrats client for SSH
+start_sockrats_ssh() {
+    log_info "Starting sockrats client (SSH)..."
 
-    RUST_LOG=info "$SOCKSRAT_BIN" --config "$FIXTURES_DIR/test-ssh.toml" &
-    SOCKSRAT_SSH_PID=$!
+    RUST_LOG=info "$SOCKRATS_BIN" --config "$FIXTURES_DIR/test-ssh.toml" &
+    SOCKRATS_SSH_PID=$!
     sleep 3
 
-    if kill -0 "$SOCKSRAT_SSH_PID" 2>/dev/null; then
-        log_info "SocksRat SSH client started (PID: $SOCKSRAT_SSH_PID)"
+    if kill -0 "$SOCKRATS_SSH_PID" 2>/dev/null; then
+        log_info "Sockrats SSH client started (PID: $SOCKRATS_SSH_PID)"
     else
-        log_error "Failed to start socksrat SSH client"
+        log_error "Failed to start sockrats SSH client"
         exit 1
     fi
 }
@@ -363,7 +363,7 @@ SHELL_CMDS
 # Run SOCKS5 tests only
 run_socks5_tests() {
     log_info "=== Running SOCKS5 Tests Only ==="
-    start_socksrat_socks5
+    start_sockrats_socks5
     sleep 2
     test_socks5
     return $?
@@ -372,7 +372,7 @@ run_socks5_tests() {
 # Run SSH tests only
 run_ssh_tests() {
     log_info "=== Running SSH Tests Only ==="
-    start_socksrat_ssh
+    start_sockrats_ssh
     sleep 2
     test_ssh
     return $?
@@ -384,18 +384,18 @@ run_all_tests() {
     local ssh_failed=0
 
     # Start SOCKS5 client and test
-    start_socksrat_socks5
+    start_sockrats_socks5
     sleep 2
     test_socks5 || socks5_failed=$?
 
     # Kill SOCKS5 client to free up control channel
-    if [ -n "$SOCKSRAT_SOCKS5_PID" ]; then
-        kill "$SOCKSRAT_SOCKS5_PID" 2>/dev/null || true
+    if [ -n "$SOCKRATS_SOCKS5_PID" ]; then
+        kill "$SOCKRATS_SOCKS5_PID" 2>/dev/null || true
         sleep 2
     fi
 
     # Start SSH client and test
-    start_socksrat_ssh
+    start_sockrats_ssh
     sleep 2
     test_ssh || ssh_failed=$?
 
@@ -429,18 +429,18 @@ run_all_tests() {
 }
 
 # Print usage
-# Start socksrat client for multi-service mode
-start_socksrat_multi() {
-    log_info "Starting socksrat client (Multi-service: SOCKS5 + SSH)..."
+# Start sockrats client for multi-service mode
+start_sockrats_multi() {
+    log_info "Starting sockrats client (Multi-service: SOCKS5 + SSH)..."
 
-    RUST_LOG=info "$SOCKSRAT_BIN" --config "$FIXTURES_DIR/test-multi-service.toml" &
-    SOCKSRAT_MULTI_PID=$!
+    RUST_LOG=info "$SOCKRATS_BIN" --config "$FIXTURES_DIR/test-multi-service.toml" &
+    SOCKRATS_MULTI_PID=$!
     sleep 5
 
-    if kill -0 "$SOCKSRAT_MULTI_PID" 2>/dev/null; then
-        log_info "SocksRat multi-service client started (PID: $SOCKSRAT_MULTI_PID)"
+    if kill -0 "$SOCKRATS_MULTI_PID" 2>/dev/null; then
+        log_info "Sockrats multi-service client started (PID: $SOCKRATS_MULTI_PID)"
     else
-        log_error "Failed to start socksrat multi-service client"
+        log_error "Failed to start sockrats multi-service client"
         exit 1
     fi
 }
@@ -543,14 +543,14 @@ EOF
 # Run multi-service tests
 run_multi_tests() {
     log_info "=== Running Multi-Service Tests ==="
-    start_socksrat_multi
+    start_sockrats_multi
     sleep 2
     test_multi_service
     return $?
 }
 
 usage() {
-    echo "SocksRat Integration Test Script"
+    echo "Sockrats Integration Test Script"
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
@@ -599,13 +599,13 @@ main() {
     done
 
     echo "========================================"
-    echo "  SocksRat Integration Test Suite"
+    echo "  Sockrats Integration Test Suite"
     echo "========================================"
     echo ""
 
     check_prerequisites
 
-    find_socksrat_binary
+    find_sockrats_binary
 
     echo ""
     log_info "Starting test environment..."

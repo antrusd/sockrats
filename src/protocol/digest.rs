@@ -21,7 +21,7 @@ use sha2::{Digest as Sha2Digest, Sha256};
 /// # Example
 ///
 /// ```
-/// use socksrat::protocol::digest;
+/// use sockrats::protocol::digest;
 ///
 /// let hash = digest(b"my-service-name");
 /// assert_eq!(hash.len(), 32);

@@ -1,4 +1,4 @@
-# Test Configuration for SocksRat
+# Test Configuration for Sockrats
 # This configuration is used with the test scripts to verify SOCKS5 and SSH functionality
 
 [client]

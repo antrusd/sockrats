@@ -149,7 +149,7 @@ impl ShellManager {
             cmd.env(&key, &value);
         }
         cmd.env("TERM", &term_type);
-        cmd.env("PS1", "\\u@socksrat:\\w\\$ ");
+        cmd.env("PS1", "\\u@sockrats:\\w\\$ ");
 
         // Spawn the child in the PTY
         let child = pair.slave.spawn_command(cmd)?;
@@ -259,7 +259,7 @@ impl ShellManager {
             cmd.env(&key, &value);
         }
         cmd.env("TERM", &term_type);
-        cmd.env("PS1", "\\u@socksrat:\\w\\$ ");
+        cmd.env("PS1", "\\u@sockrats:\\w\\$ ");
 
         let mut child = cmd.spawn()?;
 

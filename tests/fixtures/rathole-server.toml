@@ -1,5 +1,5 @@
 # Rathole Server Configuration for Testing
-# This file configures the rathole server to accept SocksRat connections
+# This file configures the rathole server to accept Sockrats connections
 
 [server]
 bind_addr = "0.0.0.0:2333"

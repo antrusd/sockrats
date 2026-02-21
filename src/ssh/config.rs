@@ -82,7 +82,7 @@ fn default_auth_methods() -> Vec<String> {
 }
 
 fn default_server_id() -> String {
-    format!("SSH-2.0-SocksRat_{}", env!("CARGO_PKG_VERSION"))
+    format!("SSH-2.0-Sockrats_{}", env!("CARGO_PKG_VERSION"))
 }
 
 fn default_true() -> bool {
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn test_server_id_format() {
         let config = SshConfig::default();
-        assert!(config.server_id.starts_with("SSH-2.0-SocksRat_"));
+        assert!(config.server_id.starts_with("SSH-2.0-Sockrats_"));
     }
 
     #[test]

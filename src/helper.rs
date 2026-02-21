@@ -1,4 +1,4 @@
-//! Helper utilities for SocksRat
+//! Helper utilities for Sockrats
 //!
 //! This module provides common utility functions used throughout the application.
 

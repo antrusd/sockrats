@@ -1,8 +1,8 @@
-# SocksRat - Reverse Tunneling Client
+# Sockrats - Reverse Tunneling Client
 
 ## Overview
 
-SocksRat is a Rust-based application that functions as a **reverse tunneling client** with embedded SOCKS5 and SSH servers. It connects to a remote rathole server and exposes services through that tunnel, without binding to any local network interface.
+Sockrats is a Rust-based application that functions as a **reverse tunneling client** with embedded SOCKS5 and SSH servers. It connects to a remote rathole server and exposes services through that tunnel, without binding to any local network interface.
 
 ### Key Features
 
@@ -189,7 +189,7 @@ pub(crate) use util::*;
 │                   │               LOCAL SIDE                                │
 │                   │                                                         │
 │   ┌───────────────▼────────────────────┐        ┌─────────────────────┐     │
-│   │           SocksRat                 │        │  Local Network      │     │
+│   │           Sockrats                 │        │  Local Network      │     │
 │   │  ┌──────────────────────────────┐  │        │  Services           │     │
 │   │  │     Control Channel          │  │        │                     │     │
 │   │  │     (rathole protocol)       │  │        │  - Internal APIs    │     │
@@ -229,7 +229,7 @@ SOCKS5 Service:
   Rathole Server
        │
        ▼ tunnel stream
-  SocksRat SOCKS5 Handler
+  Sockrats SOCKS5 Handler
        │
        ▼ outbound TCP/UDP
   Local Network Target (e.g., internal-api.local:8080)
@@ -242,7 +242,7 @@ SSH Service:
   Rathole Server
        │
        ▼ tunnel stream
-  SocksRat SSH Handler (russh)
+  Sockrats SSH Handler (russh)
        │
        ├──▶ Shell session (bash, zsh, etc.)
        ├──▶ Exec command
@@ -256,7 +256,7 @@ SSH Service:
 > 📏 **Note**: All files MUST stay under 600 lines. Estimated line counts shown below.
 
 ```
-socksrat/
+sockrats/
 ├── Cargo.toml
 ├── .github/
 │   └── workflows/
@@ -447,13 +447,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/socksrat /usr/local/bin/socksrat
+COPY --from=builder /app/target/release/sockrats /usr/local/bin/sockrats
 
 # Create non-root user
-RUN useradd -r -s /bin/false socksrat
-USER socksrat
+RUN useradd -r -s /bin/false sockrats
+USER sockrats
 
-ENTRYPOINT ["socksrat"]
+ENTRYPOINT ["sockrats"]
 CMD ["--help"]
 ```
 
@@ -612,7 +612,7 @@ jobs:
         with:
           context: .
           push: false
-          tags: socksrat:latest
+          tags: sockrats:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -638,8 +638,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/socksrat:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/socksrat:${{ github.ref_name }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/sockrats:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/sockrats:${{ github.ref_name }}
 ```
 
 ### Makefile for Common Tasks
@@ -649,7 +649,7 @@ jobs:
 .PHONY: all build test coverage lint clean docker-build docker-run
 
 DOCKER_IMAGE := rust:slim-trixie
-APP_NAME := socksrat
+APP_NAME := sockrats
 
 all: lint test build
 
@@ -699,7 +699,7 @@ clean:
 
 ```toml
 [package]
-name = "socksrat"
+name = "sockrats"
 version = "0.1.0"
 edition = "2026"
 authors = ["Anthony Rusdi"]
@@ -1588,7 +1588,7 @@ where
     let server_config = build_server_config(&config, &host_keys)?;
 
     // Create our handler
-    let handler = SocksRatSshHandler::new(config.clone());
+    let handler = SockratsSshHandler::new(config.clone());
 
     // Run SSH protocol on the stream
     // This is equivalent to russh::server::run_stream()
@@ -1631,17 +1631,17 @@ fn build_server_config(
     })
 }
 
-/// SSH Handler implementation for SocksRat
+/// SSH Handler implementation for Sockrats
 ///
 /// Implements russh::server::Handler to process SSH sessions
-pub struct SocksRatSshHandler {
+pub struct SockratsSshHandler {
     config: Arc<SshConfig>,
     auth_context: AuthContext,
     sessions: Arc<Mutex<HashMap<ChannelId, SshSession>>>,
     auth_attempts: u32,
 }
 
-impl SocksRatSshHandler {
+impl SockratsSshHandler {
     pub fn new(config: Arc<SshConfig>) -> Self {
         Self {
             auth_context: AuthContext::new(config.clone()),
@@ -1654,7 +1654,7 @@ impl SocksRatSshHandler {
 
 /// Handler trait implementation for russh server
 #[async_trait]
-impl Handler for SocksRatSshHandler {
+impl Handler for SockratsSshHandler {
     type Error = anyhow::Error;
 
     /// Called when client requests password authentication
@@ -1870,15 +1870,15 @@ impl Handler for SocksRatSshHandler {
 ```rust
 use anyhow::Result;
 use clap::Parser;
-use socksrat::config::Config;
-use socksrat::client::run_client;
+use sockrats::config::Config;
+use sockrats::client::run_client;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 #[derive(Parser, Debug)]
-#[command(name = "socksrat")]
+#[command(name = "sockrats")]
 #[command(author, version, about = "Reverse SOCKS5 tunneling client", long_about = None)]
 struct Args {
     /// Path to configuration file
@@ -1913,7 +1913,7 @@ async fn main() -> Result<()> {
     let config_str = std::fs::read_to_string(&args.config)?;
     let config: Config = toml::from_str(&config_str)?;
 
-    info!("Starting SocksRat client");
+    info!("Starting Sockrats client");
     info!("Connecting to: {}", config.client.remote_addr);
 
     // Setup shutdown signal
@@ -1995,14 +1995,14 @@ request_timeout = 10
 service_name = "ssh"
 
 # Path to host private key (will be generated if not exists)
-host_key_path = "/etc/socksrat/host_key"
+host_key_path = "/etc/sockrats/host_key"
 
 # Authentication methods
 allow_password_auth = true
 allow_publickey_auth = true
 
 # Path to authorized_keys file (OpenSSH format)
-authorized_keys_path = "/etc/socksrat/authorized_keys"
+authorized_keys_path = "/etc/sockrats/authorized_keys"
 
 # Connection timeout in seconds
 connection_timeout = 60
@@ -2056,7 +2056,7 @@ bind_addr = "0.0.0.0:2222"
 ### Connection Establishment
 
 ```
-1. SocksRat Client                    Rathole Server                 SOCKS5 Client
+1. Sockrats Client                    Rathole Server                 SOCKS5 Client
         |                                   |                              |
         |---(TCP/TLS/Noise/WS connect)----->|                              |
         |                                   |                              |
@@ -2073,7 +2073,7 @@ bind_addr = "0.0.0.0:2222"
 ### SOCKS5 Request Handling
 
 ```
-2. SocksRat Client                    Rathole Server                 SOCKS5 Client
+2. Sockrats Client                    Rathole Server                 SOCKS5 Client
         |                                   |                              |
         |                                   |<---(SOCKS5 connect)----------|
         |                                   |                              |
@@ -2115,7 +2115,7 @@ async fn run_data_channel_for_tcp<T: Transport>(
 }
 ```
 
-**New SocksRat code:**
+**New Sockrats code:**
 ```rust
 async fn run_data_channel_for_tcp<T: Transport>(
     conn: T::Stream,
@@ -2141,7 +2141,7 @@ This is the critical bridge between rathole's transport and fast-socks5's protoc
 ### 3. Authentication Flow
 
 ```
-Tunnel Stream                 SocksRat Handler              Target
+Tunnel Stream                 Sockrats Handler              Target
     |                              |                          |
     |--[SOCKS5 Ver + Methods]----->|                          |
     |                              |                          |
@@ -2175,7 +2175,7 @@ async fn run_data_channel_for_tcp<T: Transport>(
 }
 ```
 
-**New SocksRat code (embedded SSH server):**
+**New Sockrats code (embedded SSH server):**
 ```rust
 async fn run_data_channel_for_ssh<T: Transport>(
     conn: T::Stream,
@@ -2201,7 +2201,7 @@ This is the critical bridge between rathole's transport and russh's SSH protocol
 ### 6. SSH Authentication Flow
 
 ```
-Tunnel Stream                 SocksRat SSH Handler          Local Shell/Exec
+Tunnel Stream                 Sockrats SSH Handler          Local Shell/Exec
     |                              |                              |
     |--[SSH Protocol Version]----->|                              |
     |<-[SSH Protocol Version]------|                              |
@@ -2242,7 +2242,7 @@ UDP ASSOCIATE is a mandatory feature that enables DNS queries, gaming protocols,
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                              UDP ASSOCIATE FLOW                                 │
 │                                                                                 │
-│  SOCKS5 Client              Rathole Server              SocksRat Client         │
+│  SOCKS5 Client              Rathole Server              Sockrats Client         │
 │       │                          │                           │                  │
 │       │──[UDP ASSOCIATE cmd]────►│───[via tunnel]───────────►│                  │
 │       │                          │                           │                  │
@@ -3317,8 +3317,8 @@ async fn handle_pooled_request<T: Transport>(
 # Start rathole server (with server config)
 rathole server.toml
 
-# Start SocksRat client
-socksrat -c client.toml
+# Start Sockrats client
+sockrats -c client.toml
 
 # =====================
 # Test SOCKS5 Service

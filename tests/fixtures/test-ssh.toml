@@ -1,4 +1,4 @@
-# Test Configuration for SocksRat - SSH only (legacy single-service mode)
+# Test Configuration for Sockrats - SSH only (legacy single-service mode)
 # This configuration is used with the test scripts to verify SSH functionality
 
 [client]
