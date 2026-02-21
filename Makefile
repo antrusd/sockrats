@@ -21,7 +21,9 @@ build:
 
 # Build in Docker (static with musl)
 build-docker:
-	docker run --network host --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
+		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && cargo build --release"
 
 # Run tests
@@ -30,7 +32,9 @@ test:
 
 # Run tests in Docker
 test-docker:
-	docker run --network host --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
+		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && cargo test --all-features"
 
 # Run coverage
@@ -40,6 +44,7 @@ coverage:
 # Run coverage in Docker (requires --privileged for ASLR disable)
 coverage-docker:
 	docker run --network host --rm --privileged --security-opt seccomp=unconfined \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && \
 		       cargo install cargo-tarpaulin && \
@@ -79,6 +84,7 @@ build-linux-x86_64-docker:
 	@echo "Building for x86_64-unknown-linux-musl (static)..."
 	@mkdir -p dist/x86_64-unknown-linux-musl
 	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c 'apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && \
 			cargo build --release && \
@@ -90,6 +96,7 @@ build-linux-aarch64-docker:
 	@echo "Building for aarch64-unknown-linux-musl (static)..."
 	@mkdir -p dist/aarch64-unknown-linux-musl
 	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c 'set -e && \
 			apk add --no-cache musl-dev pkgconf py3-pip cmake make perl clang && \
@@ -109,6 +116,7 @@ build-windows-docker:
 	@echo "Building for x86_64-pc-windows-gnu (static)..."
 	@mkdir -p dist/x86_64-pc-windows-gnu
 	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c 'set -e && \
 			apk add --no-cache musl-dev pkgconf py3-pip cmake make perl clang && \
@@ -124,6 +132,7 @@ build-macos-x86_64-docker:
 	@echo "Building for x86_64-apple-darwin..."
 	@mkdir -p dist/x86_64-apple-darwin
 	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_OSXCROSS) \
 		sh -c 'set -e && \
 			apt-get update && apt-get install -y pkg-config clang cmake git libxml2-dev libz-dev curl xz-utils libbz2-dev libssl-dev libxar-dev liblzma-dev musl-tools && \
@@ -150,6 +159,7 @@ build-macos-aarch64-docker:
 	@echo "Building for aarch64-apple-darwin (Apple Silicon M1/M2/M3)..."
 	@mkdir -p dist/aarch64-apple-darwin
 	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_OSXCROSS) \
 		sh -c 'set -e && \
 			apt-get update && apt-get install -y pkg-config clang cmake git libxml2-dev libz-dev curl xz-utils libbz2-dev libssl-dev libxar-dev liblzma-dev musl-tools && \
