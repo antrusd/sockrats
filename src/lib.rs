@@ -50,6 +50,7 @@ pub mod helper;
 pub mod pool;
 pub mod protocol;
 pub mod socks;
+pub mod ssh;
 pub mod transport;
 
 // Re-export commonly used items
