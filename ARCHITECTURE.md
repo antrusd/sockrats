@@ -1,16 +1,17 @@
-# SocksRat - Reverse SOCKS5 Tunneling Client
+# SocksRat - Reverse Tunneling Client
 
 ## Overview
 
-SocksRat is a Rust-based application that functions as a **reverse tunneling client** with an embedded SOCKS5 server. It connects to a remote rathole server and exposes a SOCKS5 proxy through that tunnel, without binding to any local network interface.
+SocksRat is a Rust-based application that functions as a **reverse tunneling client** with embedded SOCKS5 and SSH servers. It connects to a remote rathole server and exposes services through that tunnel, without binding to any local network interface.
 
 ### Key Features
 
 1. **Client-Only Mode**: No server-side logic; connects to a standard rathole server
 2. **Reverse SOCKS Tunneling**: SOCKS5 traffic flows through the rathole tunnel
-3. **No Local Listeners**: SOCKS5 server operates purely in-memory on tunnel streams
-4. **Full UDP ASSOCIATE Support**: Complete UDP relay for DNS and other UDP protocols
-5. **Connection Pooling**: Pre-established data channel pool for improved performance
+3. **Reverse SSH Server**: Full SSH server with shell/exec/SFTP capabilities via tunnel
+4. **No Local Listeners**: All servers operate purely in-memory on tunnel streams
+5. **Full UDP ASSOCIATE Support**: Complete UDP relay for DNS and other UDP protocols for embedded SOCKS5 server
+6. **Connection Pooling**: Pre-established data channel pool for improved performance
 
 ---
 
@@ -158,52 +159,94 @@ pub(crate) use util::*;
 
 ## Architecture Diagram
 
+### Multi-Service Architecture
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              REMOTE SIDE                                    │
-│  ┌─────────────┐         ┌─────────────────┐         ┌─────────────────┐    │
-│  │   Browser   │◄───────►│  Rathole Server │◄───────►│ Internet/Target │    │
-│  │  (SOCKS5    │         │  (bind_addr:    │         │    Services     │    │
-│  │   Client)   │         │   1080)         │         │                 │    │
-│  └─────────────┘         └────────┬────────┘         └─────────────────┘    │
-│                                   │                                         │
-│                          Control Channel                                    │
-│                          + Data Channels                                    │
-│                                   │                                         │
-└───────────────────────────────────┼─────────────────────────────────────────┘
-                                    │
-                          ──────────┼────────── NAT/Firewall
-                                    │
-┌───────────────────────────────────┼─────────────────────────────────────────┐
-│                              LOCAL SIDE                                     │
-│                                   │                                         │
-│                    ┌──────────────▼──────────────┐                          │
-│                    │         SocksRat            │                          │
-│                    │  ┌────────────────────────┐ │                          │
-│                    │  │  Control Channel       │ │                          │
-│                    │  │  (rathole protocol)    │ │                          │
-│                    │  └───────────┬────────────┘ │                          │
-│                    │              │              │                          │
-│                    │  ┌───────────▼────────────┐ │                          │
-│                    │  │  Data Channel Handler  │ │                          │
-│                    │  │  (spawns per request)  │ │                          │
-│                    │  └───────────┬────────────┘ │                          │
-│                    │              │              │                          │
-│                    │  ┌───────────▼────────────┐ │                          │
-│                    │  │  In-Memory SOCKS5      │ │                          │
-│                    │  │  (fast-socks5 based)   │ │                          │
-│                    │  │  - No local binding    │ │                          │
-│                    │  │  - Processes tunnel    │ │                          │
-│                    │  │    stream directly     │ │                          │
-│                    │  └───────────┬────────────┘ │                          │
-│                    │              │              │                          │
-│                    │  ┌───────────▼────────────┐ │                          │
-│                    │  │  Outbound Connection   │ │                          │
-│                    │  │  (to target hosts)     │ │                          │
-│                    │  └────────────────────────┘ │                          │
-│                    └─────────────────────────────┘                          │
+│                                                                             │
+│   ┌─────────────┐    ┌─────────────┐                                        │
+│   │   Browser   │    │ SSH Client  │                                        │
+│   │  (SOCKS5)   │    │ (OpenSSH)   │                                        │
+│   └──────┬──────┘    └──────┬──────┘                                        │
+│          │ :1080            │ :2222                                         │
+│          │                  │                                               │
+│   ┌──────▼──────────────────▼──────┐                                        │
+│   │      Rathole Server            │                                        │
+│   │  ┌──────────────────────────┐  │                                        │
+│   │  │ socks5 service  :1080    │  │                                        │
+│   │  │ ssh service     :2222    │  │                                        │
+│   │  └────────────┬─────────────┘  │                                        │
+│   └───────────────┼────────────────┘                                        │
+│                   │                                                         │
+│          Control + Data Channels                                            │
+│                   │                                                         │
+└───────────────────┼─────────────────────────────────────────────────────────┘
+                    │
+          ──────────┼────────── NAT/Firewall
+                    │
+┌───────────────────┼─────────────────────────────────────────────────────────┐
+│                   │               LOCAL SIDE                                │
+│                   │                                                         │
+│   ┌───────────────▼────────────────────┐        ┌─────────────────────┐     │
+│   │           SocksRat                 │        │  Local Network      │     │
+│   │  ┌──────────────────────────────┐  │        │  Services           │     │
+│   │  │     Control Channel          │  │        │                     │     │
+│   │  │     (rathole protocol)       │  │        │  - Internal APIs    │     │
+│   │  └─────────────┬────────────────┘  │        │  - Databases        │     │
+│   │                │                   │        │  - Admin panels     │     │
+│   │  ┌─────────────▼────────────────┐  │        │  - Any TCP/UDP      │     │
+│   │  │   Data Channel Handler       │  │        │    endpoint         │     │
+│   │  │   (service router)           │  │        └──────────▲──────────┘     │
+│   │  └──────┬──────────────┬────────┘  │                   │                │
+│   │         │              │           │                   │                │
+│   │  ┌──────▼──────┐ ┌─────▼────────┐  │                   │                │
+│   │  │ SOCKS5      │ │ SSH Server   │  │                   │                │
+│   │  │ Handler     │ │ Handler      │  │                   │                │
+│   │  │(fast-socks5)│ │(russh)       │  │                   │                │
+│   │  │             │ │              │  │                   │                │
+│   │  │- TCP CONNECT│ │- Shell/Exec  │  │                   │                │
+│   │  │- UDP ASSOC  │ │- SFTP        │  │                   │                │
+│   │  └──────┬──────┘ │- Port fwd    │  │                   │                │
+│   │         │        └─────┬────────┘  │                   │                │
+│   │         │              │           │                   │                │
+│   │  ┌──────▼──────────────▼────────┐  │                   │                │
+│   │  │   Outbound Connections       │──┼───────────────────┘                │
+│   │  │   (to local network)         │  │                                    │
+│   │  └──────────────────────────────┘  │                                    │
+│   └────────────────────────────────────┘                                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Service-Specific Data Flow
+
+```
+SOCKS5 Service:
+  Remote Browser (SOCKS5 client)
+       │
+       ▼ connects to :1080
+  Rathole Server
+       │
+       ▼ tunnel stream
+  SocksRat SOCKS5 Handler
+       │
+       ▼ outbound TCP/UDP
+  Local Network Target (e.g., internal-api.local:8080)
+
+
+SSH Service:
+  Remote SSH Client (ssh -p 2222 user@server)
+       │
+       ▼ connects to :2222
+  Rathole Server
+       │
+       ▼ tunnel stream
+  SocksRat SSH Handler (russh)
+       │
+       ├──▶ Shell session (bash, zsh, etc.)
+       ├──▶ Exec command
+       └──▶ SFTP file transfer
 ```
 
 ---
@@ -270,6 +313,22 @@ socksrat/
 │   │       ├── packet.rs             # (~150 lines) UDP packet encode/decode
 │   │       └── forwarder.rs          # (~200 lines) UDP session forwarder
 │   │
+│   ├── ssh/
+│   │   ├── mod.rs                    # (~40 lines)  SSH module root
+│   │   ├── config.rs                 # (~120 lines) SSH server configuration
+│   │   ├── keys.rs                   # (~150 lines) Host key management
+│   │   ├── auth/
+│   │   │   ├── mod.rs                # (~30 lines)  Auth module root
+│   │   │   ├── publickey.rs          # (~180 lines) Public key authentication
+│   │   │   ├── password.rs           # (~120 lines) Password authentication
+│   │   │   └── authorized_keys.rs    # (~150 lines) Authorized keys parser
+│   │   ├── handler.rs                # (~250 lines) SSH Handler implementation
+│   │   ├── session.rs                # (~200 lines) SSH session management
+│   │   └── channel/
+│   │       ├── mod.rs                # (~30 lines)  Channel module root
+│   │       ├── session.rs            # (~200 lines) Session channel handler
+│   │       └── exec.rs               # (~150 lines) Command execution handler
+│   │
 │   ├── pool/
 │   │   ├── mod.rs                    # (~40 lines)  Pool module root
 │   │   ├── channel.rs                # (~100 lines) PooledChannel struct
@@ -288,14 +347,18 @@ socksrat/
 │   │   ├── socks_parser_test.rs      # (~200 lines) SOCKS5 parsing tests
 │   │   ├── socks_auth_test.rs        # (~150 lines) Auth tests
 │   │   ├── udp_packet_test.rs        # (~150 lines) UDP packet tests
+│   │   ├── ssh_auth_test.rs          # (~180 lines) SSH authentication tests
+│   │   ├── ssh_keys_test.rs          # (~150 lines) SSH key handling tests
 │   │   └── pool_test.rs              # (~200 lines) Pool logic tests
 │   ├── integration/
 │   │   ├── control_channel_test.rs   # (~250 lines) Control channel tests
 │   │   ├── data_channel_test.rs      # (~200 lines) Data channel tests
 │   │   ├── tcp_proxy_test.rs         # (~200 lines) TCP proxy tests
-│   │   └── udp_proxy_test.rs         # (~250 lines) UDP proxy tests
+│   │   ├── udp_proxy_test.rs         # (~250 lines) UDP proxy tests
+│   │   └── ssh_session_test.rs       # (~250 lines) SSH session tests
 │   └── e2e/
-│       └── full_flow_test.rs         # (~300 lines) End-to-end tests
+│       ├── full_flow_test.rs         # (~300 lines) End-to-end tests
+│       └── ssh_flow_test.rs          # (~250 lines) SSH end-to-end tests
 │
 ├── examples/
 │   ├── config.toml                   # Example configuration
@@ -638,13 +701,13 @@ clean:
 [package]
 name = "socksrat"
 version = "0.1.0"
-edition = "2021"
-authors = ["Your Name"]
-description = "Reverse SOCKS5 tunneling client using rathole protocol"
+edition = "2026"
+authors = ["Anthony Rusdi"]
+description = "Reverse SOCKS5/SSH tunneling client using rathole protocol"
 license = "MIT"
 
 [features]
-default = ["native-tls", "noise"]
+default = ["native-tls", "noise", "ssh"]
 
 # TLS support
 native-tls = ["tokio-native-tls"]
@@ -652,6 +715,9 @@ rustls = ["tokio-rustls", "rustls-pemfile", "rustls-native-certs"]
 
 # Noise protocol support
 noise = ["snowstorm", "base64"]
+
+# SSH server support
+ssh = ["russh", "russh-keys"]
 
 # WebSocket support
 websocket-native-tls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "native-tls"]
@@ -705,6 +771,10 @@ tokio-util = { version = "0.7", optional = true, features = ["io"] }
 futures-core = { version = "0.3", optional = true }
 futures-sink = { version = "0.3", optional = true }
 
+# Optional SSH server (russh)
+russh = { version = "0.47", optional = true, default-features = false }
+russh-keys = { version = "0.47", optional = true }
+
 # Proxy support for outbound connections
 async-http-proxy = { version = "1.2", features = ["runtime-tokio", "basic-auth"] }
 async-socks5 = "0.5"
@@ -737,10 +807,7 @@ pub struct ClientConfig {
     /// Remote rathole server address (e.g., "server.example.com:2333")
     pub remote_addr: String,
 
-    /// Service name for the SOCKS5 tunnel
-    pub service_name: String,
-
-    /// Authentication token
+    /// Authentication token for rathole server
     pub token: String,
 
     /// Transport configuration
@@ -751,9 +818,27 @@ pub struct ClientConfig {
     #[serde(default = "default_heartbeat_timeout")]
     pub heartbeat_timeout: u64,
 
-    /// SOCKS5 server configuration
-    #[serde(default)]
-    pub socks: SocksConfig,
+    /// Services configuration (SOCKS5, SSH, etc.)
+    pub services: ServicesConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ServicesConfig {
+    /// SOCKS5 service configuration (optional)
+    pub socks: Option<ServiceEntry<SocksConfig>>,
+
+    /// SSH service configuration (optional)
+    pub ssh: Option<ServiceEntry<SshConfig>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ServiceEntry<T> {
+    /// Service name (must match rathole server config)
+    pub service_name: String,
+
+    /// Service-specific configuration
+    #[serde(flatten)]
+    pub config: T,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -780,6 +865,69 @@ pub struct SocksConfig {
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
 }
+
+/// SSH server configuration
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SshConfig {
+    /// Path to host private key (e.g., "/path/to/host_key")
+    pub host_key_path: String,
+
+    /// Allow password authentication
+    #[serde(default)]
+    pub allow_password_auth: bool,
+
+    /// Allow public key authentication
+    #[serde(default = "default_true")]
+    pub allow_publickey_auth: bool,
+
+    /// Path to authorized_keys file (for public key auth)
+    pub authorized_keys_path: Option<String>,
+
+    /// Users allowed to connect (username -> password mapping for password auth)
+    #[serde(default)]
+    pub users: HashMap<String, SshUserConfig>,
+
+    /// Connection timeout in seconds
+    #[serde(default = "default_ssh_timeout")]
+    pub connection_timeout: u64,
+
+    /// Maximum authentication attempts
+    #[serde(default = "default_max_auth_attempts")]
+    pub max_auth_attempts: u32,
+
+    /// Enable SFTP subsystem
+    #[serde(default = "default_true")]
+    pub enable_sftp: bool,
+
+    /// Enable shell access
+    #[serde(default = "default_true")]
+    pub enable_shell: bool,
+
+    /// Enable exec command
+    #[serde(default = "default_true")]
+    pub enable_exec: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SshUserConfig {
+    /// Password for this user (if password auth enabled)
+    pub password: Option<String>,
+
+    /// Additional authorized keys for this user
+    pub authorized_keys: Option<Vec<String>>,
+
+    /// Home directory for this user
+    pub home_dir: Option<String>,
+
+    /// Shell for this user
+    #[serde(default = "default_shell")]
+    pub shell: String,
+}
+
+fn default_true() -> bool { true }
+fn default_ssh_timeout() -> u64 { 60 }
+fn default_max_auth_attempts() -> u32 { 3 }
+fn default_shell() -> String { "/bin/bash".to_string() }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct TransportConfig {
@@ -983,11 +1131,19 @@ impl<T: 'static + Transport> ControlChannel<T> {
     }
 }
 
+/// Service type for routing data channels
+#[derive(Clone)]
+enum ServiceHandler {
+    Socks5(Arc<SocksConfig>),
+    Ssh(Arc<SshConfig>, Arc<HostKeys>),
+}
+
 struct DataChannelArgs<T: Transport> {
+    service_name: String,
     session_key: Digest,
     remote_addr: AddrMaybeCached,
     connector: Arc<T>,
-    socks_config: SocksConfig,
+    service_handler: ServiceHandler,
 }
 
 async fn run_data_channel<T: Transport>(args: DataChannelArgs<T>) -> Result<()> {
@@ -999,18 +1155,38 @@ async fn run_data_channel<T: Transport>(args: DataChannelArgs<T>) -> Result<()> 
     conn.write_all(&bincode::serialize(&hello)?).await?;
     conn.flush().await?;
 
-    // Read command - should be StartForwardTcp for SOCKS
+    // Read command from server
     match read_data_cmd(&mut conn).await? {
         DataChannelCmd::StartForwardTcp => {
-            // THIS IS THE KEY CHANGE:
-            // Instead of connecting to a local TCP socket,
-            // we process the stream as a SOCKS5 request!
-            handle_socks5_on_stream(conn, &args.socks_config).await?;
+            // Route to appropriate handler based on service type
+            match &args.service_handler {
+                ServiceHandler::Socks5(config) => {
+                    // Process as SOCKS5 connection
+                    debug!("Routing to SOCKS5 handler for service: {}", args.service_name);
+                    handle_socks5_on_stream(conn, config).await?;
+                }
+                ServiceHandler::Ssh(config, host_keys) => {
+                    // Process as SSH connection
+                    debug!("Routing to SSH handler for service: {}", args.service_name);
+                    handle_ssh_on_stream(conn, config.clone(), host_keys.clone()).await?;
+                }
+            }
         }
         DataChannelCmd::StartForwardUdp => {
-            // UDP handling for SOCKS5 UDP ASSOCIATE
-            // More complex, may require separate implementation
-            warn!("UDP not fully supported yet");
+            // UDP only supported for SOCKS5
+            match &args.service_handler {
+                ServiceHandler::Socks5(config) => {
+                    if config.allow_udp {
+                        debug!("UDP ASSOCIATE for SOCKS5 service: {}", args.service_name);
+                        handle_udp_associate_on_stream(conn, config).await?;
+                    } else {
+                        warn!("UDP not enabled for SOCKS5 service");
+                    }
+                }
+                ServiceHandler::Ssh(_config, _host_keys) => {
+                    warn!("UDP not supported for SSH service");
+                }
+            }
         }
     }
 
@@ -1366,7 +1542,330 @@ async fn handle_tcp_connect<S: AsyncRead + AsyncWrite + Unpin>(
 }
 ```
 
-### 6. Main Entry Point (`src/main.rs`)
+### 6. In-Memory SSH Handler (`src/ssh/handler.rs`)
+
+The SSH handler uses `russh` to process SSH connections directly from tunnel streams,
+without binding to a local port. This mirrors the SOCKS5 handler architecture.
+
+```rust
+//! SSH Handler - Process SSH sessions from tunnel streams
+//!
+//! Uses russh's `run_stream()` function to handle SSH protocol
+//! on any AsyncRead + AsyncWrite stream (tunnel data channels).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use russh::server::{Auth, Handle, Handler, Msg, Session};
+use russh::{Channel, ChannelId, CryptoVec, MethodSet};
+use russh_keys::key::PublicKey;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::Mutex;
+use tracing::{debug, error, info, warn};
+
+use crate::config::SshConfig;
+use crate::ssh::auth::{AuthContext, AuthResult};
+use crate::ssh::keys::HostKeys;
+use crate::ssh::session::SshSession;
+
+/// Handle SSH protocol on a tunnel stream
+///
+/// This is the key integration point - instead of accepting connections
+/// on a local TCP socket, we pass the tunnel stream directly to russh.
+pub async fn handle_ssh_on_stream<S>(
+    stream: S,
+    config: Arc<SshConfig>,
+    host_keys: Arc<HostKeys>,
+) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    debug!("Starting SSH session on tunnel stream");
+
+    // Build russh server config
+    let server_config = build_server_config(&config, &host_keys)?;
+
+    // Create our handler
+    let handler = SocksRatSshHandler::new(config.clone());
+
+    // Run SSH protocol on the stream
+    // This is equivalent to russh::server::run_stream()
+    let session = russh::server::run_stream(
+        Arc::new(server_config),
+        stream,
+        handler,
+    ).await.context("Failed to run SSH session")?;
+
+    // Wait for session to complete
+    session.await.context("SSH session error")?;
+
+    info!("SSH session completed");
+    Ok(())
+}
+
+/// Build russh server configuration from our SshConfig
+fn build_server_config(
+    config: &SshConfig,
+    host_keys: &HostKeys,
+) -> Result<russh::server::Config> {
+    let mut methods = MethodSet::empty();
+
+    if config.allow_publickey_auth {
+        methods |= MethodSet::PUBLICKEY;
+    }
+    if config.allow_password_auth {
+        methods |= MethodSet::PASSWORD;
+    }
+
+    Ok(russh::server::Config {
+        methods,
+        keys: host_keys.get_keys()?,
+        auth_rejection_time: std::time::Duration::from_secs(1),
+        auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
+        connection_timeout: Some(std::time::Duration::from_secs(
+            config.connection_timeout
+        )),
+        ..Default::default()
+    })
+}
+
+/// SSH Handler implementation for SocksRat
+///
+/// Implements russh::server::Handler to process SSH sessions
+pub struct SocksRatSshHandler {
+    config: Arc<SshConfig>,
+    auth_context: AuthContext,
+    sessions: Arc<Mutex<HashMap<ChannelId, SshSession>>>,
+    auth_attempts: u32,
+}
+
+impl SocksRatSshHandler {
+    pub fn new(config: Arc<SshConfig>) -> Self {
+        Self {
+            auth_context: AuthContext::new(config.clone()),
+            config,
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            auth_attempts: 0,
+        }
+    }
+}
+
+/// Handler trait implementation for russh server
+#[async_trait]
+impl Handler for SocksRatSshHandler {
+    type Error = anyhow::Error;
+
+    /// Called when client requests password authentication
+    async fn auth_password(
+        &mut self,
+        user: &str,
+        password: &str,
+    ) -> Result<Auth, Self::Error> {
+        if !self.config.allow_password_auth {
+            return Ok(Auth::Reject {
+                proceed_with_methods: None,
+            });
+        }
+
+        self.auth_attempts += 1;
+        if self.auth_attempts > self.config.max_auth_attempts {
+            warn!("Max auth attempts exceeded for user: {}", user);
+            return Ok(Auth::Reject {
+                proceed_with_methods: None,
+            });
+        }
+
+        match self.auth_context.verify_password(user, password).await {
+            AuthResult::Success => {
+                info!("Password auth successful for user: {}", user);
+                Ok(Auth::Accept)
+            }
+            AuthResult::Failure => {
+                warn!("Password auth failed for user: {}", user);
+                Ok(Auth::Reject {
+                    proceed_with_methods: Some(MethodSet::all()),
+                })
+            }
+        }
+    }
+
+    /// Called when client requests public key authentication
+    async fn auth_publickey(
+        &mut self,
+        user: &str,
+        public_key: &PublicKey,
+    ) -> Result<Auth, Self::Error> {
+        if !self.config.allow_publickey_auth {
+            return Ok(Auth::Reject {
+                proceed_with_methods: None,
+            });
+        }
+
+        match self.auth_context.verify_publickey(user, public_key).await {
+            AuthResult::Success => {
+                info!("Public key auth successful for user: {}", user);
+                Ok(Auth::Accept)
+            }
+            AuthResult::Failure => {
+                warn!("Public key auth failed for user: {}", user);
+                Ok(Auth::Reject {
+                    proceed_with_methods: Some(MethodSet::all()),
+                })
+            }
+        }
+    }
+
+    /// Called when a new session channel is opened
+    async fn channel_open_session(
+        &mut self,
+        channel: Channel<Msg>,
+        session: &mut Session,
+    ) -> Result<bool, Self::Error> {
+        let channel_id = channel.id();
+        debug!("Channel open session: {:?}", channel_id);
+
+        // Create a new session handler
+        let ssh_session = SshSession::new(
+            channel,
+            self.config.clone(),
+        );
+
+        self.sessions.lock().await.insert(channel_id, ssh_session);
+
+        Ok(true)
+    }
+
+    /// Called when client requests a PTY
+    async fn pty_request(
+        &mut self,
+        channel_id: ChannelId,
+        term: &str,
+        col_width: u32,
+        row_height: u32,
+        pix_width: u32,
+        pix_height: u32,
+        modes: &[(russh::Pty, u32)],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        debug!(
+            "PTY request: term={}, cols={}, rows={}",
+            term, col_width, row_height
+        );
+
+        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
+            ssh_session.set_pty(term, col_width, row_height, pix_width, pix_height);
+        }
+
+        Ok(())
+    }
+
+    /// Called when client requests shell access
+    async fn shell_request(
+        &mut self,
+        channel_id: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if !self.config.enable_shell {
+            warn!("Shell access disabled");
+            return Ok(());
+        }
+
+        debug!("Shell request for channel: {:?}", channel_id);
+
+        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
+            ssh_session.start_shell(session).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Called when client requests command execution
+    async fn exec_request(
+        &mut self,
+        channel_id: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if !self.config.enable_exec {
+            warn!("Exec access disabled");
+            return Ok(());
+        }
+
+        let command = String::from_utf8_lossy(data);
+        debug!("Exec request: {}", command);
+
+        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
+            ssh_session.exec_command(&command, session).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Called when client requests SFTP subsystem
+    async fn subsystem_request(
+        &mut self,
+        channel_id: ChannelId,
+        name: &str,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        debug!("Subsystem request: {}", name);
+
+        if name == "sftp" && self.config.enable_sftp {
+            if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
+                ssh_session.start_sftp(session).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Called when data is received on a channel
+    async fn data(
+        &mut self,
+        channel_id: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
+            ssh_session.handle_data(data, session).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Called when channel EOF is received
+    async fn channel_eof(
+        &mut self,
+        channel_id: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        debug!("Channel EOF: {:?}", channel_id);
+
+        if let Some(mut ssh_session) = self.sessions.lock().await.remove(&channel_id) {
+            ssh_session.close().await?;
+        }
+
+        Ok(())
+    }
+
+    /// Called when channel is closed
+    async fn channel_close(
+        &mut self,
+        channel_id: ChannelId,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        debug!("Channel close: {:?}", channel_id);
+
+        self.sessions.lock().await.remove(&channel_id);
+
+        Ok(())
+    }
+}
+```
+
+### 7. Main Entry Point (`src/main.rs`)
 
 ```rust
 use anyhow::Result;
@@ -1441,9 +1940,6 @@ async fn main() -> Result<()> {
 # Remote rathole server address
 remote_addr = "server.example.com:2333"
 
-# Service name (must match server configuration)
-service_name = "socks5"
-
 # Authentication token (must match server)
 token = "your-secret-token"
 
@@ -1468,7 +1964,13 @@ keepalive_interval = 8
 # pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
 # remote_public_key = "base64-encoded-key"
 
-[client.socks]
+# =====================
+# SOCKS5 Service Config
+# =====================
+[client.services.socks]
+# Service name (must match server configuration)
+service_name = "socks5"
+
 # Require SOCKS5 authentication
 auth_required = false
 
@@ -1477,29 +1979,74 @@ auth_required = false
 # password = "pass"
 
 # Allow UDP ASSOCIATE command
-allow_udp = false
+allow_udp = true
 
 # Resolve DNS on the client side
 dns_resolve = true
 
 # Connection timeout in seconds
 request_timeout = 10
+
+# =====================
+# SSH Service Config
+# =====================
+[client.services.ssh]
+# Service name (must match server configuration)
+service_name = "ssh"
+
+# Path to host private key (will be generated if not exists)
+host_key_path = "/etc/socksrat/host_key"
+
+# Authentication methods
+allow_password_auth = true
+allow_publickey_auth = true
+
+# Path to authorized_keys file (OpenSSH format)
+authorized_keys_path = "/etc/socksrat/authorized_keys"
+
+# Connection timeout in seconds
+connection_timeout = 60
+
+# Maximum authentication attempts
+max_auth_attempts = 3
+
+# Enable subsystems and features
+enable_sftp = true
+enable_shell = true
+enable_exec = true
+
+# User configuration
+[client.services.ssh.users.admin]
+password = "admin-password"  # Only used if allow_password_auth = true
+home_dir = "/home/admin"
+shell = "/bin/bash"
+
+[client.services.ssh.users.guest]
+password = "guest-password"
+home_dir = "/tmp/guest"
+shell = "/bin/sh"
 ```
 
 ---
 
 ## Rathole Server Configuration
 
-For the remote rathole server, use a configuration like:
+For the remote rathole server, configure both SOCKS5 and SSH services:
 
 ```toml
 [server]
 bind_addr = "0.0.0.0:2333"
 default_token = "your-secret-token"
 
+# SOCKS5 service - clients connect here to use SOCKS5 proxy
 [server.services.socks5]
 type = "tcp"
-bind_addr = "0.0.0.0:1080"  # SOCKS5 clients connect here
+bind_addr = "0.0.0.0:1080"
+
+# SSH service - clients connect here to use SSH server
+[server.services.ssh]
+type = "tcp"
+bind_addr = "0.0.0.0:2222"
 ```
 
 ---
@@ -1610,6 +2157,77 @@ Tunnel Stream                 SocksRat Handler              Target
     |<-[SOCKS5 Reply]--------------|                          |
     |                              |                          |
     |<======[Bidirectional Relay]======>                      |
+```
+
+### 4. SSH Server Integration (using russh)
+
+Similar to SOCKS5, the SSH server processes tunnel streams directly using `russh::server::run_stream()`:
+
+**Original rathole code (connects to local SSH server):**
+```rust
+async fn run_data_channel_for_tcp<T: Transport>(
+    mut conn: T::Stream,
+    local_addr: &str,  // e.g., "127.0.0.1:22"
+) -> Result<()> {
+    let mut local = TcpStream::connect(local_addr).await?;
+    let _ = copy_bidirectional(&mut conn, &mut local).await;
+    Ok(())
+}
+```
+
+**New SocksRat code (embedded SSH server):**
+```rust
+async fn run_data_channel_for_ssh<T: Transport>(
+    conn: T::Stream,
+    ssh_config: &SshConfig,
+    host_keys: &HostKeys,
+) -> Result<()> {
+    // Instead of connecting to a local SSH server,
+    // process the tunnel stream as an SSH connection
+    handle_ssh_on_stream(conn, ssh_config, host_keys).await
+}
+```
+
+### 5. The `handle_ssh_on_stream` Function
+
+This is the critical bridge between rathole's transport and russh's SSH protocol:
+
+- Takes the tunnel stream directly (no local socket binding)
+- Passes stream to `russh::server::run_stream()` for SSH protocol handling
+- Implements authentication (password and/or public key)
+- Handles channel requests (shell, exec, SFTP)
+- Processes data on channels bidirectionally
+
+### 6. SSH Authentication Flow
+
+```
+Tunnel Stream                 SocksRat SSH Handler          Local Shell/Exec
+    |                              |                              |
+    |--[SSH Protocol Version]----->|                              |
+    |<-[SSH Protocol Version]------|                              |
+    |                              |                              |
+    |--[Key Exchange Init]-------->|                              |
+    |<-[Key Exchange Reply]--------|                              |
+    |                              |                              |
+    |--[New Keys]----------------->|                              |
+    |<-[New Keys]------------------|                              |
+    |                              |                              |
+    |--[Service Request: auth]---->|                              |
+    |<-[Service Accept]------------|                              |
+    |                              |                              |
+    |--[Auth: publickey/password]->| (verify against config)      |
+    |<-[Auth Success]--------------|                              |
+    |                              |                              |
+    |--[Channel Open: session]---->|                              |
+    |<-[Channel Open Confirm]------|                              |
+    |                              |                              |
+    |--[PTY Request]-------------->| (optional)                   |
+    |<-[Success]-------------------|                              |
+    |                              |                              |
+    |--[Shell/Exec Request]------->|---[spawn process]----------->|
+    |<-[Success]-------------------|                              |
+    |                              |                              |
+    |<======[Bidirectional Data]=====>                            |
 ```
 
 ---
@@ -2658,18 +3276,42 @@ async fn handle_pooled_request<T: Transport>(
 
 ## Security Considerations
 
+### General Security
 1. **Token Authentication**: The rathole protocol requires a shared token for client authentication
 2. **Transport Encryption**: Use TLS or Noise transport for encrypted tunnel
-3. **SOCKS5 Authentication**: Optional username/password auth for SOCKS5 layer
-4. **No Local Binding**: The SOCKS5 server never binds locally, reducing attack surface
+3. **No Local Binding**: Services never bind locally, reducing attack surface
+4. **Service Isolation**: Each service (SOCKS5, SSH) runs independently
+
+### SOCKS5 Security
+5. **SOCKS5 Authentication**: Optional username/password auth for SOCKS5 layer
+6. **Command Restrictions**: Optionally disable UDP ASSOCIATE or BIND commands
+7. **DNS Privacy**: DNS resolution can be performed on client side
+
+### SSH Security
+8. **Host Key Management**: Generate and securely store host keys
+9. **Public Key Authentication**: Preferred over password authentication
+10. **Password Hashing**: Passwords should be hashed (argon2) in production configs
+11. **Max Auth Attempts**: Configurable limit to prevent brute force
+12. **User Isolation**: Per-user home directories and shell configuration
+13. **Subsystem Control**: Optionally disable shell, exec, or SFTP
+14. **Session Auditing**: Log all SSH authentication and command execution
 
 ---
 
 ## Testing Strategy
 
-1. **Unit Tests**: Test SOCKS5 protocol parsing and handling
-2. **Integration Tests**: Test full flow with mock rathole server
-3. **Manual Testing**: Use curl with SOCKS5 proxy through the tunnel
+### Unit Tests
+1. **SOCKS5 Protocol**: Test SOCKS5 parsing, auth, and command handling
+2. **SSH Protocol**: Test SSH auth verification, key parsing
+3. **Configuration**: Test config loading and validation
+4. **Pool Logic**: Test connection pool management
+
+### Integration Tests
+5. **Full SOCKS5 Flow**: Test with mock rathole server
+6. **Full SSH Flow**: Test SSH session lifecycle
+7. **Multi-Service**: Test SOCKS5 and SSH running simultaneously
+
+### Manual Testing
 
 ```bash
 # Start rathole server (with server config)
@@ -2678,18 +3320,48 @@ rathole server.toml
 # Start SocksRat client
 socksrat -c client.toml
 
+# =====================
+# Test SOCKS5 Service
+# =====================
+
 # Test SOCKS5 proxy (from server side)
 curl -x socks5://localhost:1080 https://example.com
+
+# Test with authentication
+curl -x socks5://user:pass@localhost:1080 https://example.com
 
 # Test UDP (DNS query through SOCKS5)
 dig @8.8.8.8 example.com +tcp  # via TCP
 # For UDP testing, use a SOCKS5-aware DNS tool
+
+# =====================
+# Test SSH Service
+# =====================
+
+# Test SSH connection (from server side, connects to port 2222)
+ssh -p 2222 admin@localhost
+
+# Test with specific key
+ssh -p 2222 -i ~/.ssh/id_rsa admin@localhost
+
+# Test exec command
+ssh -p 2222 admin@localhost "whoami"
+
+# Test SFTP
+sftp -P 2222 admin@localhost
+
+# Test SCP
+scp -P 2222 localfile.txt admin@localhost:/tmp/
 ```
 
 ---
 
 ## Future Enhancements
 
-1. **Multiple Services**: Support multiple SOCKS5 services simultaneously
-2. **Metrics**: Prometheus metrics for monitoring
-3. **Hot Reload**: Configuration hot reload support
+1. **Metrics**: Prometheus metrics for monitoring (connections, bandwidth, errors)
+2. **Hot Reload**: Configuration hot reload support
+3. **Access Control Lists**: IP-based allow/deny lists for services
+4. **Rate Limiting**: Connection rate limiting per client
+5. **SSH Agent Forwarding**: Support for SSH agent protocol
+6. **SSH Port Forwarding**: Support for -L and -R style forwarding within SSH sessions
+7. **SOCKS5 BIND**: Full BIND command support for incoming connections
