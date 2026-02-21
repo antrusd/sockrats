@@ -56,7 +56,8 @@ fmt:
 
 # Clean build artifacts
 clean:
-	cargo clean || true
+	type cargo >/dev/null && cargo clean || docker run --rm \
+		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) cargo clean
 	rm -rf target/
 	rm -rf dist/
 
