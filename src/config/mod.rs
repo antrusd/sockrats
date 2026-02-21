@@ -6,7 +6,7 @@ mod client;
 mod pool;
 mod transport;
 
-pub use client::{ClientConfig, Config, SocksConfig};
+pub use client::{ClientConfig, Config, ServiceConfig, ServiceListExt, ServiceType, SocksConfig};
 pub use pool::PoolConfig;
 pub use transport::{TcpConfig, TlsConfig, NoiseConfig, WebsocketConfig, TransportConfig, TransportType};
 
