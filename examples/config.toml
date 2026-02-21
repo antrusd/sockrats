@@ -69,6 +69,45 @@ dns_resolve = true
 # Connection timeout for outbound connections in seconds (default: 10)
 request_timeout = 10
 
+# SSH server configuration (optional, requires --features ssh)
+# Uncomment to enable embedded SSH server
+# [client.ssh]
+# enabled = true
+#
+# # Authentication methods: "password", "publickey"
+# auth_methods = ["password", "publickey"]
+#
+# # Host key file (Ed25519 or RSA in OpenSSH format)
+# host_key = "/path/to/host_key"
+#
+# # For password authentication:
+# username = "admin"
+# password = "secret"
+#
+# # For public key authentication:
+# authorized_keys = "/path/to/authorized_keys"
+#
+# # Enable shell access (default: true)
+# shell = true
+#
+# # Enable exec command (default: true)
+# exec = true
+#
+# # Enable SFTP subsystem (default: false)
+# sftp = false
+#
+# # Enable PTY allocation (default: true)
+# pty = true
+#
+# # Enable TCP/IP forwarding (default: false)
+# tcp_forwarding = false
+#
+# # Maximum authentication attempts (default: 6)
+# max_auth_tries = 6
+#
+# # Connection timeout in seconds (default: 300)
+# connection_timeout = 300
+
 # Connection pool configuration
 [client.pool]
 # Minimum number of pre-established TCP channels (default: 2)
@@ -91,3 +130,29 @@ health_check_interval = 30
 
 # Maximum time to wait for a channel from the pool (default: 10)
 acquire_timeout = 10
+
+# ============================================================================
+# Multi-Service Configuration (alternative to single-service mode above)
+# ============================================================================
+# Use this to configure multiple services (SOCKS5, SSH) on different rathole
+# service names. Uncomment and configure as needed.
+# Note: When using multi-service mode, the top-level service_name, token,
+# socks, and ssh settings are ignored.
+#
+# [[client.services]]
+# name = "socks5"
+# service_type = "socks5"
+# token = "socks-token"
+# socks.auth_required = false
+# socks.allow_udp = false
+# socks.dns_resolve = true
+# socks.request_timeout = 10
+#
+# [[client.services]]
+# name = "ssh-tunnel"
+# service_type = "ssh"
+# token = "ssh-token"
+# ssh.auth_methods = ["password"]
+# ssh.host_key_path = "/path/to/host_key"
+# ssh.username = "admin"
+# ssh.password = "secret"
