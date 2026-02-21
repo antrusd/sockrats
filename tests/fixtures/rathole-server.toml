@@ -1,0 +1,15 @@
+# Rathole Server Configuration for Testing
+# This file configures the rathole server to accept SocksRat connections
+
+[server]
+bind_addr = "0.0.0.0:2333"
+
+# SOCKS5 service - clients connect here to use SOCKS5 proxy
+[server.services.socks5]
+token = "test-socks-token"
+bind_addr = "0.0.0.0:1080"
+
+# SSH service - clients connect here to use SSH server
+[server.services.ssh]
+token = "test-ssh-token"
+bind_addr = "0.0.0.0:2222"

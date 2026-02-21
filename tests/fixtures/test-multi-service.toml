@@ -1,0 +1,32 @@
+# Test Configuration for SocksRat - Multi-service mode
+# This configuration tests running both SOCKS5 and SSH services simultaneously
+
+[client]
+remote_addr = "127.0.0.1:2333"
+
+# SOCKS5 service
+[[client.services]]
+name = "socks5"
+token = "test-socks-token"
+service_type = "socks5"
+
+# SSH service
+[[client.services]]
+name = "ssh"
+token = "test-ssh-token"
+service_type = "ssh"
+ssh.password = "testpassword"
+ssh.username = "testuser"
+ssh.default_shell = "/bin/bash"
+
+# Pool configuration for testing
+[client.pool]
+min_tcp_channels = 1
+max_tcp_channels = 5
+idle_timeout = 60
+
+# Global SOCKS5 configuration (applies to all socks5 services without their own config)
+[client.socks]
+auth_required = false
+allow_udp = true
+dns_resolve = true

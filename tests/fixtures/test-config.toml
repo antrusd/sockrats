@@ -1,0 +1,27 @@
+# Test Configuration for SocksRat
+# This configuration is used with the test scripts to verify SOCKS5 and SSH functionality
+
+[client]
+remote_addr = "127.0.0.1:2333"
+
+# Multi-service configuration
+[[client.services]]
+name = "socks5"
+token = "test-socks-token"
+service_type = "socks5"
+socks.auth_required = false
+socks.allow_udp = true
+socks.dns_resolve = true
+
+[[client.services]]
+name = "ssh"
+token = "test-ssh-token"
+service_type = "ssh"
+ssh.password = "testpassword"
+ssh.username = "testuser"
+
+# Pool configuration for testing
+[client.pool]
+min_tcp_channels = 1
+max_tcp_channels = 5
+idle_timeout = 60

@@ -1,0 +1,19 @@
+# Test Configuration for SocksRat - SSH only (legacy single-service mode)
+# This configuration is used with the test scripts to verify SSH functionality
+
+[client]
+remote_addr = "127.0.0.1:2333"
+service_name = "ssh"
+token = "test-ssh-token"
+
+# SSH server configuration
+[client.ssh]
+password = "testpassword"
+username = "testuser"
+default_shell = "/bin/bash"
+
+# Pool configuration for testing
+[client.pool]
+min_tcp_channels = 1
+max_tcp_channels = 5
+idle_timeout = 60
