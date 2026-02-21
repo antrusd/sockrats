@@ -1,699 +1,284 @@
-# Sockrats - Reverse Tunneling Client
+# Sockrats Architecture
 
 ## Overview
 
-Sockrats is a Rust-based application that functions as a **reverse tunneling client** with embedded SOCKS5 and SSH servers. It connects to a remote rathole server and exposes services through that tunnel, without binding to any local network interface.
+Sockrats is a Rust-based reverse tunneling client that connects to a [rathole](https://github.com/rapiz1/rathole) server and exposes an embedded SOCKS5 proxy and/or SSH server through the tunnel—without binding to any local network interface. The SOCKS5 and SSH servers operate entirely in-memory on tunnel streams.
 
 ### Key Features
 
-1. **Client-Only Mode**: No server-side logic; connects to a standard rathole server
-2. **Reverse SOCKS Tunneling**: SOCKS5 traffic flows through the rathole tunnel
-3. **Reverse SSH Server**: Full SSH server with shell/exec/SFTP capabilities via tunnel
-4. **No Local Listeners**: All servers operate purely in-memory on tunnel streams
-5. **Full UDP ASSOCIATE Support**: Complete UDP relay for DNS and other UDP protocols for embedded SOCKS5 server
-6. **Connection Pooling**: Pre-established data channel pool for improved performance
-
----
+- **Client-Only Mode**: No server-side logic; connects to a standard rathole server
+- **Reverse SOCKS5 Tunneling**: Full SOCKS5 proxy (TCP CONNECT + UDP ASSOCIATE) running in-memory
+- **Embedded SSH Server**: Feature-gated SSH server via `russh` with PTY support via `portable-pty`
+- **Multi-Service Architecture**: Run multiple services (SOCKS5, SSH) simultaneously on different rathole service names
+- **No Local Listeners**: All servers operate purely in-memory on tunnel data channel streams
+- **Multiple Transport Options**: TCP, TLS (rustls), Noise protocol
+- **Connection Pooling**: Pre-established data channel pool for improved performance
+- **Cross-Platform**: Linux, macOS, Windows with static builds via Docker
 
 ## HARD MANDATORY Requirements
 
-> ⚠️ **CRITICAL: These requirements MUST be followed strictly during implementation.**
-
 ### 1. Test-Driven Development (TDD)
 
-All development MUST follow the TDD approach:
+Every source file **MUST** include comprehensive unit tests. This is a **non-negotiable** requirement. All modules follow the pattern:
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           TDD DEVELOPMENT CYCLE                             │
-│                                                                             │
-│    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐                  │
-│    │   1. RED    │────►│  2. GREEN   │────►│ 3. REFACTOR │───┐              │
-│    │ Write Test  │     │ Write Code  │     │ Clean Code  │   │              │
-│    │ (must fail) │     │ (pass test) │     │ (keep pass) │   │              │
-│    └─────────────┘     └─────────────┘     └─────────────┘   │              │
-│          ▲                                                   │              │
-│          └───────────────────────────────────────────────────┘              │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**TDD Rules:**
-
-1. **Write tests FIRST**: Before writing any production code, write a failing test
-2. **Minimal implementation**: Write only enough code to make the test pass
-3. **Refactor continuously**: Clean up code while keeping all tests green
-4. **Test coverage**: Aim for >80% code coverage
-5. **Test types required**:
-   - Unit tests for all functions and methods
-   - Integration tests for module interactions
-   - End-to-end tests for full workflows
-
-**Test File Structure:**
 ```rust
-// Each module should have corresponding tests
-// src/socks/handler.rs -> tests in src/socks/handler.rs (inline)
-//                      -> or tests/socks_handler_test.rs (separate)
+// ... module implementation above ...
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Unit tests go here
     #[test]
-    fn test_function_name_given_input_returns_expected() {
-        // Arrange
-        // Act
-        // Assert
+    fn test_basic_functionality() {
+        // Test code here
     }
 
-    // Async tests
     #[tokio::test]
-    async fn test_async_function_name() {
-        // ...
+    async fn test_async_functionality() {
+        // Async test code here
     }
 }
 ```
 
-**Test Naming Convention:**
-```
-test_<function_name>_<scenario>_<expected_result>
+**Test Coverage Requirements:**
+- Minimum 80% code coverage enforced via `cargo tarpaulin --fail-under 80`
+- All public functions must have at least one test
+- Edge cases and error paths must be tested
+- Feature-gated code uses `#[cfg(feature = "ssh")]` on tests that require the SSH feature
 
-Examples:
-- test_parse_udp_header_valid_ipv4_returns_target_addr
-- test_acquire_channel_pool_empty_creates_new_channel
-- test_authenticate_invalid_password_returns_error
+**Running Tests:**
+```bash
+# Run all tests with all features
+cargo test --all-features --verbose
+
+# Run tests in Docker
+make test-docker
+
+# Run coverage
+make coverage
+# or in Docker
+make coverage-docker
 ```
 
 ### 2. Maximum 600 Lines Per File
 
-Every Rust source file MUST NOT exceed 600 lines of code.
+Every source file **MUST** stay under 600 lines. This is enforced to maintain readability and modularity. Current file sizes demonstrate compliance:
 
-**Rules:**
+| File                              | Lines | Purpose                      |
+|-----------------------------------|-------|------------------------------|
+| `src/ssh/handler.rs`              | ~500  | SSH Handler (largest file)   |
+| `src/protocol/codec.rs`           | ~489  | Protocol codec               |
+| `src/ssh/process.rs`              | ~480  | Shell/PTY process management |
+| `src/ssh/config.rs`               | ~372  | SSH configuration            |
+| `src/config/client.rs`            | ~355  | Client configuration         |
+| `src/socks/auth/password.rs`      | ~348  | SOCKS5 password auth         |
+| `src/socks/tcp_relay.rs`          | ~341  | TCP relay                    |
+| `src/error.rs`                    | ~332  | Error types                  |
+| `src/pool/tcp_pool.rs`            | ~319  | TCP channel pool             |
+| `src/ssh/auth/authorized_keys.rs` | ~300  | Authorized keys parser       |
+| `src/ssh/session.rs`              | ~292  | SSH session management       |
 
-1. **Hard limit**: No file shall exceed 600 lines (including comments and whitespace)
-2. **Split strategy**: When a file approaches 600 lines, split by logical responsibility
-3. **Module organization**: Use Rust modules to organize split code
-4. **Re-exports**: Use `mod.rs` to re-export from split files for clean API
+If a file approaches 600 lines, it must be split into submodules.
 
-**File Splitting Guidelines:**
-
-```
-When a file grows beyond 600 lines, consider splitting:
-
-┌─────────────────────────────────────────────────────────────────┐
-│ BEFORE (handler.rs - 800 lines)                                 │
-├─────────────────────────────────────────────────────────────────┤
-│ - Authentication logic (200 lines)                              │
-│ - Command parsing (150 lines)                                   │
-│ - TCP handling (200 lines)                                      │
-│ - UDP handling (200 lines)                                      │
-│ - Helper functions (50 lines)                                   │
-└─────────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ AFTER (split into multiple files)                               │
-├─────────────────────────────────────────────────────────────────┤
-│ socks/                                                          │
-│ ├── mod.rs          (~50 lines)  - Module re-exports            │
-│ ├── auth.rs         (~200 lines) - Authentication logic         │
-│ ├── command.rs      (~150 lines) - Command parsing              │
-│ ├── tcp_handler.rs  (~200 lines) - TCP handling                 │
-│ ├── udp_handler.rs  (~200 lines) - UDP handling                 │
-│ └── util.rs         (~50 lines)  - Helper functions             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Module Re-export Pattern:**
-```rust
-// src/socks/mod.rs
-mod auth;
-mod command;
-mod tcp_handler;
-mod udp_handler;
-mod util;
-
-// Re-export public APIs
-pub use auth::{authenticate, AuthMethod};
-pub use command::{parse_command, SocksCommand};
-pub use tcp_handler::handle_tcp_connect;
-pub use udp_handler::handle_udp_associate;
-pub(crate) use util::*;
-```
-
-**Line Counting:**
-- Use `wc -l` or IDE line count
-- Count all lines including:
-  - Code
-  - Comments
-  - Documentation
-  - Blank lines
-  - Test modules (if inline)
-
-**Enforcement:**
-- CI/CD should fail builds if any file exceeds 600 lines
-- Pre-commit hooks to warn developers
-- Code review checklist item
-
----
-
-## Architecture Diagram
+## Architecture Overview
 
 ### Multi-Service Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              REMOTE SIDE                                    │
-│                                                                             │
-│   ┌─────────────┐    ┌─────────────┐                                        │
-│   │   Browser   │    │ SSH Client  │                                        │
-│   │  (SOCKS5)   │    │ (OpenSSH)   │                                        │
-│   └──────┬──────┘    └──────┬──────┘                                        │
-│          │ :1080            │ :2222                                         │
-│          │                  │                                               │
-│   ┌──────▼──────────────────▼──────┐                                        │
-│   │      Rathole Server            │                                        │
-│   │  ┌──────────────────────────┐  │                                        │
-│   │  │ socks5 service  :1080    │  │                                        │
-│   │  │ ssh service     :2222    │  │                                        │
-│   │  └────────────┬─────────────┘  │                                        │
-│   └───────────────┼────────────────┘                                        │
-│                   │                                                         │
-│          Control + Data Channels                                            │
-│                   │                                                         │
-└───────────────────┼─────────────────────────────────────────────────────────┘
-                    │
-          ──────────┼────────── NAT/Firewall
-                    │
-┌───────────────────┼─────────────────────────────────────────────────────────┐
-│                   │               LOCAL SIDE                                │
-│                   │                                                         │
-│   ┌───────────────▼────────────────────┐        ┌─────────────────────┐     │
-│   │           Sockrats                 │        │  Local Network      │     │
-│   │  ┌──────────────────────────────┐  │        │  Services           │     │
-│   │  │     Control Channel          │  │        │                     │     │
-│   │  │     (rathole protocol)       │  │        │  - Internal APIs    │     │
-│   │  └─────────────┬────────────────┘  │        │  - Databases        │     │
-│   │                │                   │        │  - Admin panels     │     │
-│   │  ┌─────────────▼────────────────┐  │        │  - Any TCP/UDP      │     │
-│   │  │   Data Channel Handler       │  │        │    endpoint         │     │
-│   │  │   (service router)           │  │        └──────────▲──────────┘     │
-│   │  └──────┬──────────────┬────────┘  │                   │                │
-│   │         │              │           │                   │                │
-│   │  ┌──────▼──────┐ ┌─────▼────────┐  │                   │                │
-│   │  │ SOCKS5      │ │ SSH Server   │  │                   │                │
-│   │  │ Handler     │ │ Handler      │  │                   │                │
-│   │  │(fast-socks5)│ │(russh)       │  │                   │                │
-│   │  │             │ │              │  │                   │                │
-│   │  │- TCP CONNECT│ │- Shell/Exec  │  │                   │                │
-│   │  │- UDP ASSOC  │ │- SFTP        │  │                   │                │
-│   │  └──────┬──────┘ │- Port fwd    │  │                   │                │
-│   │         │        └─────┬────────┘  │                   │                │
-│   │         │              │           │                   │                │
-│   │  ┌──────▼──────────────▼────────┐  │                   │                │
-│   │  │   Outbound Connections       │──┼───────────────────┘                │
-│   │  │   (to local network)         │  │                                    │
-│   │  └──────────────────────────────┘  │                                    │
-│   └────────────────────────────────────┘                                    │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+                                    ┌──────────────────────────────────┐
+                                    │        Rathole Server            │
+                                    │                                  │
+                                    │  ┌─────────────┐ ┌────────────┐  │
+ SOCKS5 Client ──► rathole:port1 ───┼──┤   socks5    │ │  ssh       ├──┼── SSH Client ──► rathole:port2
+                                    │  │  service    │ │  service   │  │
+                                    │  └──────┬──────┘ └─────┬──────┘  │
+                                    │         │              │         │
+                                    └─────────┼──────────────┼─────────┘
+                                              │              │
+                        ┌─────────────────────┼──────────────┼──────────────┐
+                        │                     │  Sockrats    │              │
+                        │                     ▼  Client      ▼              │
+                        │  ┌─────────────────────────────────────────────┐  │
+                        │  │              Control Channels               │  │
+                        │  │  ┌─────────────────┐  ┌──────────────────┐  │  │
+                        │  │  │ CC: "socks5"    │  │ CC: "ssh"        │  │  │
+                        │  │  │ (SOCKS5 handler)│  │ (SSH handler)    │  │  │
+                        │  │  └────────┬────────┘  └─────────┬────────┘  │  │
+                        │  └───────────┼─────────────────────┼───────────┘  │
+                        │              │                     │              │
+                        │              ▼                     ▼              │
+                        │  ┌─────────────────┐  ┌─────────────────────┐     │
+                        │  │  Data Channel   │  │  Data Channel       │     │
+                        │  │  → SOCKS5       │  │  → SSH Server       │     │
+                        │  │    handler      │  │    (russh)          │     │
+                        │  └─────────────────┘  └─────────────────────┘     │
+                        └───────────────────────────────────────────────────┘
 ```
 
 ### Service-Specific Data Flow
 
+**SOCKS5 Flow:**
 ```
-SOCKS5 Service:
-  Remote Browser (SOCKS5 client)
-       │
-       ▼ connects to :1080
-  Rathole Server
-       │
-       ▼ tunnel stream
-  Sockrats SOCKS5 Handler
-       │
-       ▼ outbound TCP/UDP
-  Local Network Target (e.g., internal-api.local:8080)
-
-
-SSH Service:
-  Remote SSH Client (ssh -p 2222 user@server)
-       │
-       ▼ connects to :2222
-  Rathole Server
-       │
-       ▼ tunnel stream
-  Sockrats SSH Handler (russh)
-       │
-       ├──▶ Shell session (bash, zsh, etc.)
-       ├──▶ Exec command
-       └──▶ SFTP file transfer
+Remote SOCKS5 Client → Rathole Server → Data Channel → handle_socks5_on_stream() → Target
 ```
 
----
+**SSH Flow:**
+```
+Remote SSH Client → Rathole Server → Data Channel → handle_ssh_on_stream() → Shell/Exec/PTY
+```
 
 ## Directory Structure
 
-> 📏 **Note**: All files MUST stay under 600 lines. Estimated line counts shown below.
-
 ```
 sockrats/
-├── Cargo.toml
-├── .github/
-│   └── workflows/
-│       └── ci.yml                    # CI with line count check
-├── scripts/
-│   └── check_line_count.sh           # Enforce 600 line limit
+├── Cargo.toml                       # Package manifest with feature flags
+├── Cargo.lock                       # Dependency lock file
+├── Cross.toml                       # Cross-compilation configuration
+├── Makefile                         # Build system with Docker cross-compilation
+├── README.md                        # Project README
+├── ARCHITECTURE.md                  # This file
+├── .gitignore                       # Git ignore rules
+│
 ├── src/
-│   ├── main.rs                       # (~80 lines)  Entry point, CLI parsing
-│   ├── lib.rs                        # (~50 lines)  Library root, re-exports
+│   ├── main.rs                      # Entry point: CLI args, logging, signal handling
+│   ├── lib.rs                       # Library root: module exports, VERSION, NAME constants
+│   ├── error.rs                     # Error types: SockratsError, Socks5Error, Socks5ReplyCode
+│   ├── helper.rs                    # Utilities: RetryConfig, copy_bidirectional, constants
 │   │
-│   ├── config/
-│   │   ├── mod.rs                    # (~30 lines)  Config module root
-│   │   ├── client.rs                 # (~150 lines) ClientConfig, SocksConfig
-│   │   ├── transport.rs              # (~120 lines) TransportConfig types
-│   │   └── pool.rs                   # (~80 lines)  PoolConfig
+│   ├── config/                      # Configuration module
+│   │   ├── mod.rs                   # load_config(), parse_config()
+│   │   ├── client.rs                # Config, ClientConfig, ServiceConfig, SocksConfig, ServiceType
+│   │   ├── transport.rs             # TransportType, TransportConfig, TlsConfig, NoiseConfig, etc.
+│   │   └── pool.rs                  # PoolConfig with validation
 │   │
-│   ├── protocol/
-│   │   ├── mod.rs                    # (~40 lines)  Protocol module root
-│   │   ├── types.rs                  # (~100 lines) Hello, Auth, Ack, Commands
-│   │   ├── codec.rs                  # (~150 lines) Serialize/deserialize
-│   │   └── digest.rs                 # (~50 lines)  SHA256 digest functions
+│   ├── protocol/                    # Rathole wire protocol
+│   │   ├── mod.rs                   # Re-exports
+│   │   ├── types.rs                 # Hello, Auth, Ack, ControlChannelCmd, DataChannelCmd, UdpTraffic
+│   │   ├── codec.rs                 # read_*/write_* async codec functions, bincode serialization
+│   │   └── digest.rs                # SHA-256 digest for authentication
 │   │
-│   ├── transport/
-│   │   ├── mod.rs                    # (~100 lines) Transport trait, SocketOpts
-│   │   ├── addr.rs                   # (~80 lines)  AddrMaybeCached
-│   │   ├── tcp.rs                    # (~120 lines) TCP transport
-│   │   ├── tls.rs                    # (~200 lines) TLS transport (optional)
-│   │   ├── noise.rs                  # (~250 lines) Noise transport (optional)
-│   │   └── websocket.rs              # (~300 lines) WebSocket transport (optional)
+│   ├── transport/                   # Transport layer abstraction
+│   │   ├── mod.rs                   # Transport trait, TransportDyn/StreamDyn, create_transport()
+│   │   ├── addr.rs                  # AddrMaybeCached with DNS caching
+│   │   ├── tcp.rs                   # TcpTransport
+│   │   ├── tls.rs                   # TlsTransport (rustls with NoVerifier for skip_verify)
+│   │   └── noise.rs                 # NoiseTransport (snowstorm)
 │   │
-│   ├── client/
-│   │   ├── mod.rs                    # (~50 lines)  Client module root
-│   │   ├── client.rs                 # (~150 lines) Client struct, run()
-│   │   ├── control_channel.rs        # (~250 lines) Control channel logic
-│   │   └── data_channel.rs           # (~200 lines) Data channel handling
+│   ├── client/                      # Client logic
+│   │   ├── mod.rs                   # run_client() - transport selection entry point
+│   │   ├── client.rs                # Client<T> - multi-service orchestration
+│   │   ├── control_channel.rs       # ControlChannel<T> - handshake, reconnection, heartbeat
+│   │   └── data_channel.rs          # ServiceHandler enum, run_data_channel() routing
 │   │
-│   ├── socks/
-│   │   ├── mod.rs                    # (~40 lines)  SOCKS5 module root
-│   │   ├── consts.rs                 # (~50 lines)  SOCKS5 constants
-│   │   ├── types.rs                  # (~100 lines) TargetAddr, Command enums
-│   │   ├── auth/
-│   │   │   ├── mod.rs                # (~30 lines)  Auth module root
-│   │   │   ├── none.rs               # (~50 lines)  No authentication
-│   │   │   └── password.rs           # (~120 lines) Username/password auth
-│   │   ├── command/
-│   │   │   ├── mod.rs                # (~30 lines)  Command module root
-│   │   │   ├── parser.rs             # (~150 lines) Parse SOCKS5 commands
-│   │   │   └── reply.rs              # (~100 lines) Build SOCKS5 replies
-│   │   ├── handler.rs                # (~200 lines) Main SOCKS5 stream handler
-│   │   ├── tcp_relay.rs              # (~180 lines) TCP CONNECT relay
-│   │   └── udp/
-│   │       ├── mod.rs                # (~30 lines)  UDP module root
-│   │       ├── associate.rs          # (~250 lines) UDP ASSOCIATE handler
-│   │       ├── packet.rs             # (~150 lines) UDP packet encode/decode
-│   │       └── forwarder.rs          # (~200 lines) UDP session forwarder
+│   ├── socks/                       # In-memory SOCKS5 server
+│   │   ├── mod.rs                   # Re-exports all SOCKS5 components
+│   │   ├── consts.rs                # SOCKS5 protocol constants
+│   │   ├── types.rs                 # SocksCommand, TargetAddr enums
+│   │   ├── handler.rs               # handle_socks5_on_stream() main entry
+│   │   ├── tcp_relay.rs             # handle_tcp_connect(), relay_tcp()
+│   │   ├── auth/                    # SOCKS5 authentication
+│   │   │   ├── mod.rs               # AuthMethod enum, authenticate(), select_auth_method()
+│   │   │   ├── none.rs              # NoAuth handler
+│   │   │   └── password.rs          # PasswordAuth RFC 1929 implementation
+│   │   ├── command/                 # SOCKS5 command handling
+│   │   │   ├── mod.rs               # Re-exports
+│   │   │   ├── parser.rs            # parse_command() with IPv4/IPv6/domain parsing
+│   │   │   └── reply.rs             # build_reply(), send_success(), send_io_error(), etc.
+│   │   └── udp/                     # UDP ASSOCIATE support
+│   │       ├── mod.rs               # UdpRelay struct
+│   │       ├── associate.rs         # handle_udp_associate() (virtual mode for reverse tunnel)
+│   │       ├── forwarder.rs         # UdpForwarder with session management
+│   │       └── packet.rs            # UdpPacket encode/decode per RFC 1928
 │   │
-│   ├── ssh/
-│   │   ├── mod.rs                    # (~40 lines)  SSH module root
-│   │   ├── config.rs                 # (~120 lines) SSH server configuration
-│   │   ├── keys.rs                   # (~150 lines) Host key management
-│   │   ├── auth/
-│   │   │   ├── mod.rs                # (~30 lines)  Auth module root
-│   │   │   ├── publickey.rs          # (~180 lines) Public key authentication
-│   │   │   ├── password.rs           # (~120 lines) Password authentication
-│   │   │   └── authorized_keys.rs    # (~150 lines) Authorized keys parser
-│   │   ├── handler.rs                # (~250 lines) SSH Handler implementation
-│   │   ├── session.rs                # (~200 lines) SSH session management
-│   │   └── channel/
-│   │       ├── mod.rs                # (~30 lines)  Channel module root
-│   │       ├── session.rs            # (~200 lines) Session channel handler
-│   │       └── exec.rs               # (~150 lines) Command execution handler
+│   ├── ssh/                         # Embedded SSH server (feature-gated: "ssh")
+│   │   ├── mod.rs                   # handle_ssh_on_stream(), build_russh_config()
+│   │   ├── config.rs                # SshConfig with validation
+│   │   ├── handler.rs               # SshHandler implementing russh::server::Handler
+│   │   ├── keys.rs                  # Host key management: load, generate, save, fingerprint
+│   │   ├── session.rs               # SessionState, ChannelState, ChannelType
+│   │   ├── process.rs               # ShellManager, ShellProcess, PtyConfig, exec_command()
+│   │   └── auth/                    # SSH authentication
+│   │       ├── mod.rs               # AuthResult enum
+│   │       ├── authorized_keys.rs   # AuthorizedKeys parser (OpenSSH format)
+│   │       ├── password.rs          # verify_password() with constant-time comparison
+│   │       └── publickey.rs         # PublicKeyAuth, verify_public_key()
 │   │
-│   ├── pool/
-│   │   ├── mod.rs                    # (~40 lines)  Pool module root
-│   │   ├── channel.rs                # (~100 lines) PooledChannel struct
-│   │   ├── tcp_pool.rs               # (~250 lines) TCP channel pool
-│   │   ├── udp_pool.rs               # (~200 lines) UDP channel pool
-│   │   ├── guard.rs                  # (~80 lines)  PooledChannelGuard RAII
-│   │   └── manager.rs                # (~150 lines) Pool health manager
-│   │
-│   ├── error.rs                      # (~100 lines) Custom error types
-│   └── helper.rs                     # (~80 lines)  Utility functions
+│   └── pool/                        # Connection pool
+│       ├── mod.rs                   # ChannelType enum, create_pool()
+│       ├── channel.rs               # PooledChannel<S> with metadata and staleness check
+│       ├── guard.rs                 # PooledChannelGuard<S> RAII guard with mpsc return
+│       ├── manager.rs               # PoolManager, PoolStats, PoolStatsSnapshot
+│       └── tcp_pool.rs              # TcpChannelPool<T> - full pool with warm-up, maintenance
 │
-├── tests/
-│   ├── common/
-│   │   └── mod.rs                    # (~100 lines) Test utilities, mocks
-│   ├── unit/
-│   │   ├── socks_parser_test.rs      # (~200 lines) SOCKS5 parsing tests
-│   │   ├── socks_auth_test.rs        # (~150 lines) Auth tests
-│   │   ├── udp_packet_test.rs        # (~150 lines) UDP packet tests
-│   │   ├── ssh_auth_test.rs          # (~180 lines) SSH authentication tests
-│   │   ├── ssh_keys_test.rs          # (~150 lines) SSH key handling tests
-│   │   └── pool_test.rs              # (~200 lines) Pool logic tests
-│   ├── integration/
-│   │   ├── control_channel_test.rs   # (~250 lines) Control channel tests
-│   │   ├── data_channel_test.rs      # (~200 lines) Data channel tests
-│   │   ├── tcp_proxy_test.rs         # (~200 lines) TCP proxy tests
-│   │   ├── udp_proxy_test.rs         # (~250 lines) UDP proxy tests
-│   │   └── ssh_session_test.rs       # (~250 lines) SSH session tests
-│   └── e2e/
-│       ├── full_flow_test.rs         # (~300 lines) End-to-end tests
-│       └── ssh_flow_test.rs          # (~250 lines) SSH end-to-end tests
+├── examples/                        # Example configurations
+│   ├── config.toml                  # Full configuration with all options documented
+│   ├── config-minimal.toml          # Minimal single-service configuration
+│   └── config-multiple-minimal.toml # Minimal multi-service configuration
 │
-├── examples/
-│   ├── config.toml                   # Example configuration
-│   └── simple_client.rs              # (~100 lines) Minimal client example
-│
-└── benches/
-    └── throughput_bench.rs           # (~150 lines) Performance benchmarks
+└── tests/                           # Integration tests
+    ├── test-integration.sh          # Shell-based integration test script
+    ├── common/
+    │   └── mod.rs                   # Test utilities: mock streams, TestConfigBuilder, socks5_mock
+    └── fixtures/
+        ├── test-config.toml         # Multi-service test config
+        ├── test-multi-service.toml  # Multi-service test config with global socks
+        ├── test-socks5.toml         # SOCKS5-specific test config
+        ├── test-ssh.toml            # SSH-specific test config
+        └── rathole-server.toml      # Rathole server config for integration tests
 ```
 
-### Line Count Enforcement Script
+## Build System
 
-```bash
-#!/bin/bash
-# scripts/check_line_count.sh
+### Makefile
 
-MAX_LINES=600
-EXIT_CODE=0
-
-echo "Checking Rust files for line count limit (max: $MAX_LINES)..."
-
-for file in $(find src tests -name "*.rs"); do
-    lines=$(wc -l < "$file")
-    if [ "$lines" -gt "$MAX_LINES" ]; then
-        echo "❌ FAIL: $file has $lines lines (max: $MAX_LINES)"
-        EXIT_CODE=1
-    else
-        echo "✓ OK: $file ($lines lines)"
-    fi
-done
-
-if [ $EXIT_CODE -eq 0 ]; then
-    echo ""
-    echo "✅ All files are within the line limit!"
-else
-    echo ""
-    echo "❌ Some files exceed the line limit. Please split them."
-fi
-
-exit $EXIT_CODE
-```
-
-### Docker Build Configuration
-
-> ⚠️ **MANDATORY**: All builds MUST use the `rust:slim-trixie` Docker image.
-
-#### Dockerfile
-
-```dockerfile
-# Dockerfile
-# Build stage using rust:slim-trixie
-FROM rust:slim-trixie AS builder
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy manifests first for better caching
-COPY Cargo.toml Cargo.lock ./
-
-# Create dummy source for dependency caching
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    cargo build --release && \
-    rm -rf src
-
-# Copy actual source
-COPY src ./src
-COPY tests ./tests
-
-# Build the application
-RUN touch src/main.rs && \
-    cargo build --release
-
-# Runtime stage - minimal image
-FROM debian:trixie-slim AS runtime
-
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libssl3 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy binary from builder
-COPY --from=builder /app/target/release/sockrats /usr/local/bin/sockrats
-
-# Create non-root user
-RUN useradd -r -s /bin/false sockrats
-USER sockrats
-
-ENTRYPOINT ["sockrats"]
-CMD ["--help"]
-```
-
-#### Docker Compose for Development
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  # Development container with hot-reload
-  dev:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      - .:/app
-      - cargo-cache:/usr/local/cargo/registry
-      - target-cache:/app/target
-    working_dir: /app
-    command: cargo watch -x "test" -x "run -- -c examples/config.toml"
-
-  # Test runner
-  test:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      - .:/app
-      - cargo-cache:/usr/local/cargo/registry
-      - target-cache:/app/target
-    working_dir: /app
-    command: cargo test --all-features
-
-  # Coverage runner
-  coverage:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    volumes:
-      - .:/app
-      - cargo-cache:/usr/local/cargo/registry
-      - target-cache:/app/target
-    working_dir: /app
-    command: cargo tarpaulin --out Html --fail-under 80
-
-volumes:
-  cargo-cache:
-  target-cache:
-```
-
-#### Development Dockerfile
-
-```dockerfile
-# Dockerfile.dev
-FROM rust:slim-trixie
-
-# Install development dependencies
-RUN apt-get update && apt-get install -y \
-    pkg-config \
-    libssl-dev \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install development tools
-RUN cargo install cargo-watch cargo-tarpaulin
-
-WORKDIR /app
-
-# Keep container running for development
-CMD ["bash"]
-```
-
-### CI Configuration
-
-```yaml
-# .github/workflows/ci.yml
-name: CI
-
-on: [push, pull_request]
-
-env:
-  DOCKER_IMAGE: rust:slim-trixie
-
-jobs:
-  lint-and-check:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:slim-trixie
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          apt-get update && apt-get install -y pkg-config libssl-dev
-
-      - name: Check line count
-        run: |
-          chmod +x scripts/check_line_count.sh
-          ./scripts/check_line_count.sh
-
-      - name: Check formatting
-        run: cargo fmt -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-features -- -D warnings
-
-  test:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:slim-trixie
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          apt-get update && apt-get install -y pkg-config libssl-dev
-
-      - name: Run tests
-        run: cargo test --all-features --verbose
-
-  coverage:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:slim-trixie
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          apt-get update && apt-get install -y pkg-config libssl-dev
-
-      - name: Install tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Run coverage
-        run: cargo tarpaulin --out Xml --fail-under 80
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: cobertura.xml
-          fail_ci_if_error: true
-
-  build:
-    runs-on: ubuntu-latest
-    needs: [lint-and-check, test, coverage]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: sockrats:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  release:
-    runs-on: ubuntu-latest
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/sockrats:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/sockrats:${{ github.ref_name }}
-```
-
-### Makefile for Common Tasks
+The project uses a `Makefile` with Docker-based cross-compilation targets:
 
 ```makefile
-# Makefile
-.PHONY: all build test coverage lint clean docker-build docker-run
+# Makefile targets
+make build              # Build for current platform (cargo build --release)
+make test               # Run all tests (cargo test --all-features --verbose)
+make lint               # cargo fmt --check && cargo clippy
+make fmt                # cargo fmt
+make coverage           # cargo tarpaulin --out Html --fail-under 80
+make clean              # Clean build artifacts and dist/
 
-DOCKER_IMAGE := rust:slim-trixie
-APP_NAME := sockrats
+# Docker targets (for reproducible builds)
+make build-docker       # Build in Docker (static with musl)
+make test-docker        # Run tests in Docker
+make coverage-docker    # Run coverage in Docker
 
-all: lint test build
-
-# Build using Docker
-build:
-	docker run --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "apt-get update && apt-get install -y pkg-config libssl-dev && cargo build --release"
-
-# Run tests using Docker
-test:
-	docker run --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "apt-get update && apt-get install -y pkg-config libssl-dev && cargo test --all-features"
-
-# Run coverage using Docker
-coverage:
-	docker run --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "apt-get update && apt-get install -y pkg-config libssl-dev && \
-		       cargo install cargo-tarpaulin && \
-		       cargo tarpaulin --out Html --fail-under 80"
-
-# Lint using Docker
-lint:
-	docker run --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "cargo fmt -- --check && cargo clippy --all-features -- -D warnings"
-
-# Check line count
-check-lines:
-	./scripts/check_line_count.sh
-
-# Build Docker image
-docker-build:
-	docker build -t $(APP_NAME):latest .
-
-# Run Docker container
-docker-run:
-	docker run --rm -it $(APP_NAME):latest
-
-# Clean build artifacts
-clean:
-	docker run --rm -v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) cargo clean
-	rm -rf target/
+# Cross-compilation (all produce static binaries)
+make build-linux-docker         # Linux x86_64 + ARM64 (musl static)
+make build-windows-docker       # Windows x86_64 (zigbuild)
+make build-macos-docker         # macOS Intel + Apple Silicon (osxcross)
+make build-all-docker           # All platforms
+make release-archives           # Create tar.gz/zip archives in dist/release/
+make targets                    # Show available targets
 ```
 
----
+**Build images:**
+- Linux/Windows: `rust:1.93.0-alpine3.23` (musl for static linking)
+- macOS: `rust:slim-trixie` (Debian with osxcross for macOS SDK)
+
+### Cross.toml
+
+Configuration for the `cross` tool, defining per-target Docker images and pre-build steps:
+
+```toml
+[build.env]
+passthrough = ["RUST_BACKTRACE", "RUST_LOG"]
+
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
+pre-build = ["apk add --no-cache openssl-dev openssl-libs-static"]
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+pre-build = ["apk add --no-cache openssl-dev openssl-libs-static"]
+
+[target.x86_64-pc-windows-gnu]
+image = "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
+```
 
 ## Cargo.toml
 
@@ -701,27 +286,33 @@ clean:
 [package]
 name = "sockrats"
 version = "0.1.0"
-edition = "2026"
-authors = ["Anthony Rusdi"]
-description = "Reverse SOCKS5/SSH tunneling client using rathole protocol"
+edition = "2021"
+authors = ["Sockrats Contributors"]
+description = "Reverse SOCKS5 tunneling client using rathole protocol"
 license = "MIT"
 
 [features]
-default = ["native-tls", "noise", "ssh"]
+default = ["rustls-tls", "noise", "ssh"]
 
-# TLS support
+# TLS support using rustls (pure Rust, easy static linking)
+rustls-tls = ["tokio-rustls", "rustls-pemfile", "rustls-native-certs", "ring"]
+
+# TLS support using native-tls (requires OpenSSL)
 native-tls = ["tokio-native-tls"]
-rustls = ["tokio-rustls", "rustls-pemfile", "rustls-native-certs"]
+native-tls-vendored = ["tokio-native-tls", "openssl-vendored"]
+
+# Vendored OpenSSL for static builds
+openssl-vendored = ["openssl/vendored"]
 
 # Noise protocol support
 noise = ["snowstorm", "base64"]
 
-# SSH server support
-ssh = ["russh", "russh-keys"]
-
-# WebSocket support
+# WebSocket support (config types exist, transport not yet implemented)
+websocket-rustls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "rustls-tls"]
 websocket-native-tls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "native-tls"]
-websocket-rustls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "rustls"]
+
+# SSH server support
+ssh = ["russh", "ssh-key", "rand", "portable-pty"]
 
 [dependencies]
 # Async runtime
@@ -735,13 +326,12 @@ async-trait = "0.1"
 
 # Configuration
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.5"
+toml = "0.8"
 clap = { version = "4.0", features = ["derive"] }
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-log = "0.4"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Protocol serialization
 bincode = "1"
@@ -752,1134 +342,1139 @@ lazy_static = "1.4"
 socket2 = { version = "0.5", features = ["all"] }
 backoff = { version = "0.4", features = ["tokio"] }
 
-# SOCKS5 protocol (from fast-socks5, we'll adapt)
+# SOCKS5 protocol
 tokio-stream = "0.1"
+futures = "0.3"
 
-# Optional TLS
-tokio-native-tls = { version = "0.3", optional = true }
-tokio-rustls = { version = "0.25", optional = true }
-rustls-native-certs = { version = "0.7", optional = true }
+# TLS with rustls (default - pure Rust, easy static linking)
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
+rustls-native-certs = { version = "0.8", optional = true }
 rustls-pemfile = { version = "2.0", optional = true }
+ring = { version = "0.17", optional = true }
+
+# TLS with native-tls (optional)
+tokio-native-tls = { version = "0.3", optional = true }
+openssl = { version = "0.10", optional = true }
 
 # Optional Noise
 snowstorm = { version = "0.4", optional = true, features = ["stream"], default-features = false }
-base64 = { version = "0.21", optional = true }
+base64 = { version = "0.22", optional = true }
 
 # Optional WebSocket
-tokio-tungstenite = { version = "0.20", optional = true }
+tokio-tungstenite = { version = "0.24", optional = true }
 tokio-util = { version = "0.7", optional = true, features = ["io"] }
 futures-core = { version = "0.3", optional = true }
 futures-sink = { version = "0.3", optional = true }
 
 # Optional SSH server (russh)
-russh = { version = "0.47", optional = true, default-features = false }
-russh-keys = { version = "0.47", optional = true }
+russh = { version = "0.57", optional = true }
+ssh-key = { version = "0.6", optional = true, features = ["ed25519", "rsa", "std"] }
+rand = { version = "0.8", optional = true }
+portable-pty = { version = "0.8", optional = true }
 
 # Proxy support for outbound connections
 async-http-proxy = { version = "1.2", features = ["runtime-tokio", "basic-auth"] }
-async-socks5 = "0.5"
+async-socks5 = "0.6"
 url = { version = "2.2", features = ["serde"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
-env_logger = "0.10"
+env_logger = "0.11"
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "z"  # Optimize for size
 ```
 
----
+## Module Details
 
-## Core Components
+### 1. Configuration (`src/config/`)
 
-### 1. Configuration (`src/config.rs`)
+The configuration module is split across four files:
 
-Simplified configuration for client-only mode:
+#### `src/config/mod.rs` — Loading
 
 ```rust
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config> {
+    let content = std::fs::read_to_string(path.as_ref())?;
+    parse_config(&content)
+}
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+pub fn parse_config(content: &str) -> Result<Config> {
+    let config: Config = toml::from_str(content)?;
+    Ok(config)
+}
+```
+
+#### `src/config/client.rs` — Client & Service Configuration
+
+The configuration supports two modes:
+
+1. **Legacy single-service mode**: Uses top-level `service_name` and `token`
+2. **Multi-service mode**: Uses `services: Vec<ServiceConfig>` array
+
+```rust
+/// Top-level configuration
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub client: ClientConfig,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ClientConfig {
-    /// Remote rathole server address (e.g., "server.example.com:2333")
-    pub remote_addr: String,
+/// Service type discriminator
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceType {
+    Socks5,
+    Ssh,
+}
 
-    /// Authentication token for rathole server
+/// Individual service configuration for multi-service mode
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServiceConfig {
+    pub name: String,
     pub token: String,
+    #[serde(default)]
+    pub service_type: ServiceType,
+    #[serde(default)]
+    pub socks: Option<SocksConfig>,
+    #[serde(default)]
+    pub ssh: Option<SshConfig>,
+}
 
-    /// Transport configuration
+/// Trait for querying service lists
+pub trait ServiceListExt {
+    fn get_service(&self, name: &str) -> Option<&ServiceConfig>;
+    fn socks5_services(&self) -> Vec<&ServiceConfig>;
+    fn ssh_services(&self) -> Vec<&ServiceConfig>;
+}
+
+/// Main client configuration
+#[derive(Debug, Deserialize)]
+pub struct ClientConfig {
+    pub remote_addr: String,
+    #[serde(default)]
+    pub service_name: String,          // Legacy single-service
+    #[serde(default)]
+    pub token: String,                 // Legacy single-service
     #[serde(default)]
     pub transport: TransportConfig,
-
-    /// Heartbeat timeout in seconds
     #[serde(default = "default_heartbeat_timeout")]
     pub heartbeat_timeout: u64,
-
-    /// Services configuration (SOCKS5, SSH, etc.)
-    pub services: ServicesConfig,
+    #[serde(default)]
+    pub socks: SocksConfig,
+    #[serde(default)]
+    pub ssh: Option<SshConfig>,
+    #[serde(default)]
+    pub pool: PoolConfig,
+    #[serde(default)]
+    pub services: Vec<ServiceConfig>,  // Multi-service mode
 }
+```
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ServicesConfig {
-    /// SOCKS5 service configuration (optional)
-    pub socks: Option<ServiceEntry<SocksConfig>>,
+The `effective_services()` method unifies both modes:
 
-    /// SSH service configuration (optional)
-    pub ssh: Option<ServiceEntry<SshConfig>>,
+```rust
+impl ClientConfig {
+    /// Returns the effective list of services.
+    /// If multi-service mode (services array non-empty), returns those.
+    /// Otherwise, creates a single ServiceConfig from legacy fields.
+    pub fn effective_services(&self) -> Vec<ServiceConfig> {
+        if !self.services.is_empty() {
+            return self.services.clone();
+        }
+        // Fallback: create single service from legacy config
+        vec![ServiceConfig {
+            name: self.service_name.clone(),
+            token: self.token.clone(),
+            service_type: ServiceType::Socks5,
+            socks: Some(self.socks.clone()),
+            ssh: self.ssh.clone(),
+        }]
+    }
 }
+```
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ServiceEntry<T> {
-    /// Service name (must match rathole server config)
-    pub service_name: String,
+#### SOCKS5 Configuration
 
-    /// Service-specific configuration
-    #[serde(flatten)]
-    pub config: T,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+```rust
+#[derive(Debug, Clone, Deserialize)]
 pub struct SocksConfig {
-    /// Enable/disable authentication
     #[serde(default)]
     pub auth_required: bool,
-
-    /// Username for SOCKS5 auth
     pub username: Option<String>,
-
-    /// Password for SOCKS5 auth
     pub password: Option<String>,
-
-    /// Allow UDP associate command
     #[serde(default)]
     pub allow_udp: bool,
-
-    /// DNS resolution mode
     #[serde(default = "default_dns_resolve")]
     pub dns_resolve: bool,
-
-    /// Request timeout in seconds
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
 }
+```
 
-/// SSH server configuration
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SshConfig {
-    /// Path to host private key (e.g., "/path/to/host_key")
-    pub host_key_path: String,
+#### `src/config/transport.rs` — Transport Configuration
 
-    /// Allow password authentication
-    #[serde(default)]
-    pub allow_password_auth: bool,
-
-    /// Allow public key authentication
-    #[serde(default = "default_true")]
-    pub allow_publickey_auth: bool,
-
-    /// Path to authorized_keys file (for public key auth)
-    pub authorized_keys_path: Option<String>,
-
-    /// Users allowed to connect (username -> password mapping for password auth)
-    #[serde(default)]
-    pub users: HashMap<String, SshUserConfig>,
-
-    /// Connection timeout in seconds
-    #[serde(default = "default_ssh_timeout")]
-    pub connection_timeout: u64,
-
-    /// Maximum authentication attempts
-    #[serde(default = "default_max_auth_attempts")]
-    pub max_auth_attempts: u32,
-
-    /// Enable SFTP subsystem
-    #[serde(default = "default_true")]
-    pub enable_sftp: bool,
-
-    /// Enable shell access
-    #[serde(default = "default_true")]
-    pub enable_shell: bool,
-
-    /// Enable exec command
-    #[serde(default = "default_true")]
-    pub enable_exec: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SshUserConfig {
-    /// Password for this user (if password auth enabled)
-    pub password: Option<String>,
-
-    /// Additional authorized keys for this user
-    pub authorized_keys: Option<Vec<String>>,
-
-    /// Home directory for this user
-    pub home_dir: Option<String>,
-
-    /// Shell for this user
-    #[serde(default = "default_shell")]
-    pub shell: String,
-}
-
-fn default_true() -> bool { true }
-fn default_ssh_timeout() -> u64 { 60 }
-fn default_max_auth_attempts() -> u32 { 3 }
-fn default_shell() -> String { "/bin/bash".to_string() }
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct TransportConfig {
-    #[serde(rename = "type", default)]
-    pub transport_type: TransportType,
-
-    #[serde(default)]
-    pub tcp: TcpConfig,
-
-    pub tls: Option<TlsConfig>,
-    pub noise: Option<NoiseConfig>,
-    pub websocket: Option<WebsocketConfig>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+```rust
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum TransportType {
-    #[default]
-    #[serde(rename = "tcp")]
     Tcp,
-    #[serde(rename = "tls")]
     Tls,
-    #[serde(rename = "noise")]
     Noise,
-    #[serde(rename = "websocket")]
     Websocket,
 }
 
-// ... TcpConfig, TlsConfig, NoiseConfig, WebsocketConfig remain similar to rathole
+#[derive(Debug, Clone, Deserialize)]
+pub struct TransportConfig {
+    #[serde(rename = "type", default)]
+    pub transport_type: TransportType,
+    #[serde(default)]
+    pub tcp: TcpConfig,
+    #[serde(default)]
+    pub tls: TlsConfig,
+    pub noise: Option<NoiseConfig>,
+    #[serde(default)]
+    pub websocket: WebsocketConfig,
+}
+
+pub struct TcpConfig {
+    pub nodelay: bool,                // default: true
+    pub keepalive_secs: u64,          // default: 20
+    pub keepalive_interval: u64,      // default: 8
+}
+
+pub struct TlsConfig {
+    pub hostname: Option<String>,
+    pub trusted_root: Option<String>,
+    pub skip_verify: bool,            // default: false
+}
+
+pub struct NoiseConfig {
+    pub pattern: String,              // default: "Noise_NK_25519_ChaChaPoly_BLAKE2s"
+    pub remote_public_key: String,
+    pub local_private_key: Option<String>,
+}
 ```
 
-### 2. Protocol Layer (`src/protocol.rs`)
-
-This is largely copied from rathole with minimal modifications:
+#### `src/config/pool.rs` — Pool Configuration
 
 ```rust
-// Copy the entire protocol.rs from rathole
-// Key structures:
-// - Hello enum (ControlChannelHello, DataChannelHello)
-// - Auth struct
-// - Ack enum
-// - ControlChannelCmd enum
-// - DataChannelCmd enum
-// - Protocol reading/writing functions
+#[derive(Debug, Clone, Deserialize)]
+pub struct PoolConfig {
+    pub min_tcp_channels: usize,      // default: 2
+    pub max_tcp_channels: usize,      // default: 10
+    pub min_udp_channels: usize,      // default: 1
+    pub max_udp_channels: usize,      // default: 5
+    pub idle_timeout: u64,            // default: 300 (seconds)
+    pub health_check_interval: u64,   // default: 30 (seconds)
+    pub acquire_timeout: u64,         // default: 10 (seconds)
+}
+
+impl PoolConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        // Validates min <= max for both TCP and UDP channels
+        // Validates max > 0 for both
+    }
+}
+```
+
+### 2. Protocol Layer (`src/protocol/`)
+
+Implements the rathole wire protocol for communication with the rathole server.
+
+#### Types (`src/protocol/types.rs`)
+
+```rust
+pub type Digest = [u8; 32];
+pub type ProtocolVersion = digest::Digest;
+
+pub enum Hello {
+    ControlChannelHello(ProtocolVersion, Digest),  // version, service_name_digest
+    DataChannelHello(ProtocolVersion, Digest),      // version, session_key
+}
+
+pub struct Auth {
+    pub digest: Digest,  // SHA-256(token + nonce)
+}
+
+pub enum Ack {
+    Ok,
+    ServiceNotExist,
+    AuthFailed,
+}
+
+pub enum ControlChannelCmd {
+    CreateDataChannel,
+    HeartBeat,
+}
+
+pub enum DataChannelCmd {
+    StartForwardTcp,
+    StartForwardUdp,
+}
+
+pub struct UdpTraffic {
+    pub from: SocketAddr,
+    pub payload: Bytes,
+}
+```
+
+#### Codec (`src/protocol/codec.rs`)
+
+Provides async read/write functions for each protocol message type:
+
+```rust
+pub async fn read_hello<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Result<Hello>;
+pub async fn write_hello<T: AsyncWrite + Unpin>(conn: &mut T, hello: &Hello) -> Result<()>;
+pub async fn read_auth<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Result<Auth>;
+pub async fn write_auth<T: AsyncWrite + Unpin>(conn: &mut T, auth: &Auth) -> Result<()>;
+pub async fn read_ack<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Result<Ack>;
+pub async fn write_ack<T: AsyncWrite + Unpin>(conn: &mut T, ack: &Ack) -> Result<()>;
+pub async fn read_control_cmd<T>(conn: &mut T) -> Result<ControlChannelCmd>;
+pub async fn write_control_cmd<T>(conn: &mut T, cmd: &ControlChannelCmd) -> Result<()>;
+pub async fn read_data_cmd<T>(conn: &mut T) -> Result<DataChannelCmd>;
+pub async fn write_data_cmd<T>(conn: &mut T, cmd: &DataChannelCmd) -> Result<()>;
+```
+
+All messages are serialized using `bincode` with a 2-byte big-endian length prefix.
+
+#### Digest (`src/protocol/digest.rs`)
+
+```rust
+pub fn digest(data: &[u8]) -> Digest;  // SHA-256 hash
 ```
 
 ### 3. Transport Layer (`src/transport/`)
 
-Copy the transport modules from rathole, keeping only client-side functionality:
+#### Transport Trait (`src/transport/mod.rs`)
 
 ```rust
-// src/transport/mod.rs
-use async_trait::async_trait;
-use tokio::io::{AsyncRead, AsyncWrite};
-use std::fmt::Debug;
+pub struct SocketOpts {
+    pub nodelay: bool,
+    pub keepalive_secs: Option<u64>,
+    pub keepalive_interval: Option<u64>,
+}
 
-#[async_trait]
-pub trait Transport: Debug + Send + Sync {
-    type Stream: 'static + AsyncRead + AsyncWrite + Unpin + Send + Sync + Debug;
+impl SocketOpts {
+    pub fn for_control_channel() -> Self;   // nodelay=true, keepalive=40s
+    pub fn for_data_channel() -> Self;      // nodelay=true, keepalive=20s
+    pub fn from_tcp_config(config: &TcpConfig) -> Self;
+    pub fn apply(&self, stream: &TcpStream) -> std::io::Result<()>;
+}
 
-    fn new(config: &TransportConfig) -> anyhow::Result<Self> where Self: Sized;
+pub trait Transport: Debug + Send + Sync + 'static {
+    type Stream: AsyncRead + AsyncWrite + Unpin + Send + Debug + 'static;
+
+    fn new(config: &TransportConfig) -> Result<Self> where Self: Sized;
     fn hint(conn: &Self::Stream, opts: SocketOpts);
-    async fn connect(&self, addr: &AddrMaybeCached) -> anyhow::Result<Self::Stream>;
-    // Note: No bind/accept methods - client only!
+    async fn connect(&self, addr: &AddrMaybeCached) -> Result<Self::Stream>;
 }
 ```
 
-### 4. Main Client Logic (`src/client.rs`)
-
-The heart of the application - adapted from rathole's client:
+Dynamic dispatch traits for runtime transport selection:
 
 ```rust
-use crate::config::ClientConfig;
-use crate::protocol::*;
-use crate::socks::SocksHandler;
-use crate::transport::{Transport, AddrMaybeCached, SocketOpts};
-use anyhow::{anyhow, bail, Context, Result};
-use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{broadcast, oneshot};
-use tracing::{debug, error, info, warn};
+pub trait TransportDyn: Debug + Send + Sync {
+    async fn connect_dyn(&self, addr: &AddrMaybeCached) -> Result<Box<dyn StreamDyn>>;
+}
 
+pub trait StreamDyn: AsyncRead + AsyncWrite + Unpin + Send + Debug {}
+
+pub fn create_transport(config: &TransportConfig) -> Result<Box<dyn TransportDyn>> {
+    match config.transport_type {
+        TransportType::Tcp => Ok(Box::new(TcpTransport::new(config)?)),
+        TransportType::Tls => Ok(Box::new(TlsTransport::new(config)?)),
+        TransportType::Noise => Ok(Box::new(NoiseTransport::new(config)?)),
+        TransportType::Websocket => anyhow::bail!("WebSocket transport not yet implemented"),
+    }
+}
+```
+
+#### TCP Transport (`src/transport/tcp.rs`)
+
+```rust
+pub struct TcpTransport {
+    socket_opts: SocketOpts,
+    connect_timeout: Duration,
+}
+
+impl Transport for TcpTransport {
+    type Stream = TcpStream;
+    // Connects with timeout, applies socket options
+}
+```
+
+#### TLS Transport (`src/transport/tls.rs`)
+
+Uses `tokio-rustls` (pure Rust TLS). Supports `skip_verify` via a `NoVerifier` implementation:
+
+```rust
+pub struct TlsTransport {
+    connector: TlsConnector,
+    hostname: String,
+    socket_opts: SocketOpts,
+    connect_timeout: Duration,
+}
+
+impl Transport for TlsTransport {
+    type Stream = TlsStream<TcpStream>;
+    // Creates TLS connection over TCP with optional certificate verification
+}
+```
+
+#### Noise Transport (`src/transport/noise.rs`)
+
+Uses `snowstorm` crate for Noise protocol encryption:
+
+```rust
+pub struct NoiseTransport {
+    builder: NoiseBuilder,
+    socket_opts: SocketOpts,
+    connect_timeout: Duration,
+}
+
+impl Transport for NoiseTransport {
+    type Stream = NoiseStream<TcpStream>;
+    // Creates Noise-encrypted connection over TCP
+}
+```
+
+#### Address Caching (`src/transport/addr.rs`)
+
+```rust
+pub struct AddrMaybeCached {
+    addr: String,
+    cached: Option<SocketAddr>,
+}
+
+impl AddrMaybeCached {
+    pub async fn resolve(&self) -> Result<SocketAddr>;       // Uses cache if available
+    pub async fn resolve_fresh(&self) -> Result<SocketAddr>; // Always performs DNS lookup
+    pub fn set_cached(&mut self, addr: SocketAddr);
+    pub fn clear_cached(&mut self);
+}
+```
+
+### 4. Client Logic (`src/client/`)
+
+#### Entry Point (`src/client/mod.rs`)
+
+```rust
+pub async fn run_client(config: Config, shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
+    let client_config = config.client;
+    match client_config.transport.transport_type {
+        TransportType::Tcp => {
+            let transport = TcpTransport::new(&client_config.transport)?;
+            Client::new(client_config).await?.run(shutdown_rx).await
+        }
+        TransportType::Tls => { /* Similar with TlsTransport */ }
+        TransportType::Noise => { /* Similar with NoiseTransport */ }
+        TransportType::Websocket => { anyhow::bail!("WebSocket transport not yet implemented") }
+    }
+}
+```
+
+#### Client (`src/client/client.rs`)
+
+```rust
 pub struct Client<T: Transport> {
     config: ClientConfig,
-    transport: Arc<T>,
+    _phantom: PhantomData<T>,
 }
 
-impl<T: 'static + Transport> Client<T> {
-    pub async fn new(config: ClientConfig) -> Result<Self> {
-        let transport = Arc::new(T::new(&config.transport)?);
-        Ok(Client { config, transport })
-    }
+impl<T: Transport + 'static> Client<T> {
+    pub async fn run(self, mut shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
+        let services = self.config.effective_services();
 
-    pub async fn run(&self, mut shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
-        let control_channel = ControlChannel::new(
-            self.config.clone(),
-            self.transport.clone(),
-        );
-
-        tokio::select! {
-            result = control_channel.run() => {
-                if let Err(e) = result {
-                    error!("Control channel error: {:#}", e);
-                }
-            }
-            _ = shutdown_rx.recv() => {
-                info!("Shutdown signal received");
-            }
+        for service in &services {
+            let service_config = self.create_service_config(service);
+            // Spawn a control channel per service
+            tokio::spawn(async move {
+                let cc = ControlChannel::<T>::new(service_config);
+                cc.run().await
+            });
         }
 
+        // Wait for shutdown signal
+        shutdown_rx.recv().await?;
         Ok(())
     }
-}
 
-struct ControlChannel<T: Transport> {
-    config: ClientConfig,
-    transport: Arc<T>,
-}
-
-impl<T: 'static + Transport> ControlChannel<T> {
-    fn new(config: ClientConfig, transport: Arc<T>) -> Self {
-        ControlChannel { config, transport }
+    fn create_service_config(&self, service: &ServiceConfig) -> ClientConfig {
+        // Creates a ClientConfig with the service's name, token, and config
     }
+}
+```
 
-    async fn run(&self) -> Result<()> {
+#### Control Channel (`src/client/control_channel.rs`)
+
+```rust
+pub struct ControlChannel<T: Transport> {
+    config: ClientConfig,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: Transport + 'static> ControlChannel<T> {
+    pub async fn run(&self) -> Result<()> {
+        let retry = RetryConfig::new(10); // Max 10 reconnection attempts
+        let mut attempt = 0;
+
         loop {
             match self.run_once().await {
-                Ok(_) => break,
+                Ok(_) => { attempt = 0; }
                 Err(e) => {
-                    warn!("Control channel error: {:#}. Reconnecting...", e);
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    attempt += 1;
+                    if attempt >= retry.max_retries {
+                        return Err(e);
+                    }
+                    let delay = retry.delay_for_attempt(attempt);
+                    tokio::time::sleep(delay).await;
                 }
             }
         }
-        Ok(())
     }
 
     async fn run_once(&self) -> Result<()> {
-        let mut remote_addr = AddrMaybeCached::new(&self.config.remote_addr);
-        remote_addr.resolve().await?;
-
-        let mut conn = self.transport.connect(&remote_addr).await?;
-        T::hint(&conn, SocketOpts::for_control_channel());
-
-        // Perform handshake (same as rathole)
-        let session_key = self.do_handshake(&mut conn).await?;
-
-        info!("Control channel established");
-
-        // Listen for commands
-        loop {
-            tokio::select! {
-                cmd = read_control_cmd(&mut conn) => {
-                    match cmd? {
-                        ControlChannelCmd::CreateDataChannel => {
-                            let args = DataChannelArgs {
-                                session_key: session_key.clone(),
-                                remote_addr: remote_addr.clone(),
-                                connector: self.transport.clone(),
-                                socks_config: self.config.socks.clone(),
-                            };
-                            tokio::spawn(run_data_channel(args));
-                        }
-                        ControlChannelCmd::HeartBeat => {
-                            debug!("Heartbeat received");
-                        }
-                    }
-                }
-                _ = tokio::time::sleep(Duration::from_secs(self.config.heartbeat_timeout)) => {
-                    bail!("Heartbeat timeout");
-                }
-            }
-        }
+        // 1. Create transport and connect
+        // 2. Perform handshake (Hello → Auth → Ack)
+        // 3. Listen for ControlChannelCmd
     }
 
-    async fn do_handshake<S: AsyncRead + AsyncWrite + Unpin>(&self, conn: &mut S) -> Result<Digest> {
-        // Send control channel hello
-        let service_digest = protocol::digest(self.config.service_name.as_bytes());
-        let hello = Hello::ControlChannelHello(CURRENT_PROTO_VERSION, service_digest);
-        conn.write_all(&bincode::serialize(&hello)?).await?;
-        conn.flush().await?;
-
-        // Read server's hello (contains nonce)
-        let nonce = match read_hello(conn).await? {
-            Hello::ControlChannelHello(_, d) => d,
-            _ => bail!("Unexpected hello type"),
-        };
-
-        // Send auth
-        let mut concat = Vec::from(self.config.token.as_bytes());
-        concat.extend_from_slice(&nonce);
-        let session_key = protocol::digest(&concat);
-        let auth = Auth(session_key);
-        conn.write_all(&bincode::serialize(&auth)?).await?;
-        conn.flush().await?;
-
-        // Read ack
-        match read_ack(conn).await? {
-            Ack::Ok => Ok(session_key),
-            other => bail!("Authentication failed: {}", other),
-        }
-    }
-}
-
-/// Service type for routing data channels
-#[derive(Clone)]
-enum ServiceHandler {
-    Socks5(Arc<SocksConfig>),
-    Ssh(Arc<SshConfig>, Arc<HostKeys>),
-}
-
-struct DataChannelArgs<T: Transport> {
-    service_name: String,
-    session_key: Digest,
-    remote_addr: AddrMaybeCached,
-    connector: Arc<T>,
-    service_handler: ServiceHandler,
-}
-
-async fn run_data_channel<T: Transport>(args: DataChannelArgs<T>) -> Result<()> {
-    // Connect to server
-    let mut conn = args.connector.connect(&args.remote_addr).await?;
-
-    // Send data channel hello
-    let hello = Hello::DataChannelHello(CURRENT_PROTO_VERSION, args.session_key);
-    conn.write_all(&bincode::serialize(&hello)?).await?;
-    conn.flush().await?;
-
-    // Read command from server
-    match read_data_cmd(&mut conn).await? {
-        DataChannelCmd::StartForwardTcp => {
-            // Route to appropriate handler based on service type
-            match &args.service_handler {
-                ServiceHandler::Socks5(config) => {
-                    // Process as SOCKS5 connection
-                    debug!("Routing to SOCKS5 handler for service: {}", args.service_name);
-                    handle_socks5_on_stream(conn, config).await?;
-                }
-                ServiceHandler::Ssh(config, host_keys) => {
-                    // Process as SSH connection
-                    debug!("Routing to SSH handler for service: {}", args.service_name);
-                    handle_ssh_on_stream(conn, config.clone(), host_keys.clone()).await?;
-                }
-            }
-        }
-        DataChannelCmd::StartForwardUdp => {
-            // UDP only supported for SOCKS5
-            match &args.service_handler {
-                ServiceHandler::Socks5(config) => {
-                    if config.allow_udp {
-                        debug!("UDP ASSOCIATE for SOCKS5 service: {}", args.service_name);
-                        handle_udp_associate_on_stream(conn, config).await?;
-                    } else {
-                        warn!("UDP not enabled for SOCKS5 service");
-                    }
-                }
-                ServiceHandler::Ssh(_config, _host_keys) => {
-                    warn!("UDP not supported for SSH service");
-                }
-            }
-        }
+    async fn do_handshake<S>(&self, conn: &mut S) -> Result<Digest> {
+        // Send Hello::ControlChannelHello with service name digest
+        // Receive Hello from server (contains nonce)
+        // Send Auth with SHA-256(token + nonce)
+        // Receive Ack
+        // Returns session_key for data channels
     }
 
-    Ok(())
+    async fn handle_commands<S>(&self, conn: S, session_key: Digest) {
+        // Loop reading ControlChannelCmd:
+        //   CreateDataChannel → spawn run_data_channel()
+        //   HeartBeat → respond with heartbeat
+    }
+
+    fn determine_service_handler(&self) -> ServiceHandler {
+        // Returns Ssh if service name contains "ssh", otherwise Socks5
+    }
 }
 ```
 
-### 5. In-Memory SOCKS5 Handler (`src/socks/handler.rs`)
-
-The critical integration point - processing SOCKS5 on the tunnel stream:
+#### Data Channel (`src/client/data_channel.rs`)
 
 ```rust
-use crate::config::SocksConfig;
-use anyhow::{Context, Result};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tracing::{debug, error, info};
-
-// SOCKS5 constants (from fast-socks5)
-const SOCKS5_VERSION: u8 = 0x05;
-const SOCKS5_AUTH_METHOD_NONE: u8 = 0x00;
-const SOCKS5_AUTH_METHOD_PASSWORD: u8 = 0x02;
-const SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE: u8 = 0xff;
-const SOCKS5_CMD_TCP_CONNECT: u8 = 0x01;
-const SOCKS5_CMD_TCP_BIND: u8 = 0x02;
-const SOCKS5_CMD_UDP_ASSOCIATE: u8 = 0x03;
-const SOCKS5_ADDR_TYPE_IPV4: u8 = 0x01;
-const SOCKS5_ADDR_TYPE_DOMAIN: u8 = 0x03;
-const SOCKS5_ADDR_TYPE_IPV6: u8 = 0x04;
-const SOCKS5_REPLY_SUCCEEDED: u8 = 0x00;
-const SOCKS5_REPLY_GENERAL_FAILURE: u8 = 0x01;
-const SOCKS5_REPLY_CONNECTION_NOT_ALLOWED: u8 = 0x02;
-const SOCKS5_REPLY_NETWORK_UNREACHABLE: u8 = 0x03;
-const SOCKS5_REPLY_HOST_UNREACHABLE: u8 = 0x04;
-const SOCKS5_REPLY_CONNECTION_REFUSED: u8 = 0x05;
-const SOCKS5_REPLY_COMMAND_NOT_SUPPORTED: u8 = 0x07;
-
-/// Target address enum
-#[derive(Debug, Clone)]
-pub enum TargetAddr {
-    Ip(SocketAddr),
-    Domain(String, u16),
+pub enum ServiceHandler {
+    Socks5(SocksConfig),
+    Ssh(Arc<SshConfig>),
 }
 
-impl TargetAddr {
-    pub async fn resolve(&self) -> Result<SocketAddr> {
-        match self {
-            TargetAddr::Ip(addr) => Ok(*addr),
-            TargetAddr::Domain(domain, port) => {
-                let addr = tokio::net::lookup_host(format!("{}:{}", domain, port))
-                    .await?
-                    .next()
-                    .context("Failed to resolve domain")?;
-                Ok(addr)
+pub async fn run_data_channel<T: Transport>(
+    args: DataChannelArgs<T>,
+) -> Result<()> {
+    // 1. Connect to server, send DataChannelHello
+    // 2. Read DataChannelCmd
+    // 3. Route based on ServiceHandler:
+    match cmd {
+        DataChannelCmd::StartForwardTcp => {
+            match handler {
+                ServiceHandler::Socks5(config) => handle_socks5_on_stream(stream, &config).await,
+                ServiceHandler::Ssh(config) => handle_ssh_on_stream(stream, config).await,
+            }
+        }
+        DataChannelCmd::StartForwardUdp => {
+            match handler {
+                ServiceHandler::Socks5(config) => { /* UDP handling */ },
+                ServiceHandler::Ssh(_) => { /* SSH doesn't use UDP */ },
             }
         }
     }
 }
+```
 
-/// Handle SOCKS5 protocol on a stream (the tunnel connection)
-///
-/// This is the key function that replaces local socket binding.
-/// The stream comes directly from the rathole tunnel.
+### 5. In-Memory SOCKS5 Handler (`src/socks/`)
+
+The SOCKS5 server implements RFC 1928 (SOCKS5) and RFC 1929 (username/password auth).
+
+#### Handler (`src/socks/handler.rs`)
+
+```rust
 pub async fn handle_socks5_on_stream<S>(mut stream: S, config: &SocksConfig) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
 {
-    // Step 1: Authentication negotiation
-    let auth_method = negotiate_auth(&mut stream, config).await?;
+    // 1. Authentication negotiation
+    let auth_method = authenticate(&mut stream, config).await?;
 
-    // Step 2: If password auth required, perform it
-    if auth_method == SOCKS5_AUTH_METHOD_PASSWORD {
-        authenticate_password(&mut stream, config).await?;
-    }
+    // 2. Parse SOCKS5 command
+    let (command, target_addr) = parse_command(&mut stream, config.dns_resolve).await?;
 
-    // Step 3: Read the SOCKS5 command
-    let (cmd, target_addr) = read_command(&mut stream, config.dns_resolve).await?;
-
-    // Step 4: Execute the command
-    match cmd {
-        SOCKS5_CMD_TCP_CONNECT => {
-            handle_tcp_connect(stream, target_addr, config).await?;
+    // 3. Execute command
+    match command {
+        SocksCommand::TcpConnect => {
+            handle_tcp_connect(&mut stream, target_addr, config.request_timeout).await
         }
-        SOCKS5_CMD_UDP_ASSOCIATE if config.allow_udp => {
-            // UDP associate is complex for reverse tunneling
-            // For now, send not supported
-            error!("UDP ASSOCIATE not implemented for reverse tunnel");
-            send_reply(&mut stream, SOCKS5_REPLY_COMMAND_NOT_SUPPORTED, None).await?;
+        SocksCommand::UdpAssociate => {
+            handle_udp_associate(stream, target_addr, config).await
         }
         _ => {
-            send_reply(&mut stream, SOCKS5_REPLY_COMMAND_NOT_SUPPORTED, None).await?;
+            send_command_not_supported(&mut stream).await
         }
     }
-
-    Ok(())
 }
 
-async fn negotiate_auth<S: AsyncRead + AsyncWrite + Unpin>(
-    stream: &mut S,
-    config: &SocksConfig,
-) -> Result<u8> {
-    // Read version and number of methods
-    let mut buf = [0u8; 2];
-    stream.read_exact(&mut buf).await?;
-
-    let version = buf[0];
-    let num_methods = buf[1];
-
-    if version != SOCKS5_VERSION {
-        anyhow::bail!("Unsupported SOCKS version: {}", version);
-    }
-
-    // Read available methods
-    let mut methods = vec![0u8; num_methods as usize];
-    stream.read_exact(&mut methods).await?;
-
-    // Select authentication method
-    let selected_method = if config.auth_required {
-        if methods.contains(&SOCKS5_AUTH_METHOD_PASSWORD) {
-            SOCKS5_AUTH_METHOD_PASSWORD
-        } else {
-            SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE
-        }
-    } else {
-        if methods.contains(&SOCKS5_AUTH_METHOD_NONE) {
-            SOCKS5_AUTH_METHOD_NONE
-        } else if methods.contains(&SOCKS5_AUTH_METHOD_PASSWORD) && config.username.is_some() {
-            SOCKS5_AUTH_METHOD_PASSWORD
-        } else {
-            SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE
-        }
-    };
-
-    // Send selected method
-    stream.write_all(&[SOCKS5_VERSION, selected_method]).await?;
-    stream.flush().await?;
-
-    if selected_method == SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE {
-        anyhow::bail!("No acceptable authentication method");
-    }
-
-    Ok(selected_method)
-}
-
-async fn authenticate_password<S: AsyncRead + AsyncWrite + Unpin>(
-    stream: &mut S,
-    config: &SocksConfig,
+pub async fn handle_socks5_with_timeout<S>(
+    stream: S, config: &SocksConfig, timeout: Duration,
 ) -> Result<()> {
-    // Read auth version
-    let mut buf = [0u8; 2];
-    stream.read_exact(&mut buf).await?;
-    let _version = buf[0];
-    let username_len = buf[1] as usize;
-
-    // Read username
-    let mut username = vec![0u8; username_len];
-    stream.read_exact(&mut username).await?;
-    let username = String::from_utf8(username)?;
-
-    // Read password length and password
-    let mut buf = [0u8; 1];
-    stream.read_exact(&mut buf).await?;
-    let password_len = buf[0] as usize;
-
-    let mut password = vec![0u8; password_len];
-    stream.read_exact(&mut password).await?;
-    let password = String::from_utf8(password)?;
-
-    // Verify credentials
-    let valid = config.username.as_ref() == Some(&username)
-        && config.password.as_ref() == Some(&password);
-
-    if valid {
-        stream.write_all(&[1, 0]).await?; // Success
-        stream.flush().await?;
-        Ok(())
-    } else {
-        stream.write_all(&[1, 1]).await?; // Failure
-        stream.flush().await?;
-        anyhow::bail!("Authentication failed")
-    }
-}
-
-async fn read_command<S: AsyncRead + Unpin>(
-    stream: &mut S,
-    resolve_dns: bool,
-) -> Result<(u8, TargetAddr)> {
-    // Read: VER CMD RSV ATYP
-    let mut buf = [0u8; 4];
-    stream.read_exact(&mut buf).await?;
-
-    let version = buf[0];
-    let cmd = buf[1];
-    let _rsv = buf[2];
-    let atyp = buf[3];
-
-    if version != SOCKS5_VERSION {
-        anyhow::bail!("Unsupported SOCKS version in command: {}", version);
-    }
-
-    // Read target address based on type
-    let target_addr = match atyp {
-        SOCKS5_ADDR_TYPE_IPV4 => {
-            let mut addr = [0u8; 4];
-            stream.read_exact(&mut addr).await?;
-            let mut port = [0u8; 2];
-            stream.read_exact(&mut port).await?;
-            let port = u16::from_be_bytes(port);
-            TargetAddr::Ip(SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::from(addr)),
-                port,
-            ))
-        }
-        SOCKS5_ADDR_TYPE_DOMAIN => {
-            let mut len = [0u8; 1];
-            stream.read_exact(&mut len).await?;
-            let len = len[0] as usize;
-
-            let mut domain = vec![0u8; len];
-            stream.read_exact(&mut domain).await?;
-            let domain = String::from_utf8(domain)?;
-
-            let mut port = [0u8; 2];
-            stream.read_exact(&mut port).await?;
-            let port = u16::from_be_bytes(port);
-
-            if resolve_dns {
-                let addr = TargetAddr::Domain(domain, port);
-                TargetAddr::Ip(addr.resolve().await?)
-            } else {
-                TargetAddr::Domain(domain, port)
-            }
-        }
-        SOCKS5_ADDR_TYPE_IPV6 => {
-            let mut addr = [0u8; 16];
-            stream.read_exact(&mut addr).await?;
-            let mut port = [0u8; 2];
-            stream.read_exact(&mut port).await?;
-            let port = u16::from_be_bytes(port);
-            TargetAddr::Ip(SocketAddr::new(
-                IpAddr::V6(std::net::Ipv6Addr::from(addr)),
-                port,
-            ))
-        }
-        _ => anyhow::bail!("Unsupported address type: {}", atyp),
-    };
-
-    Ok((cmd, target_addr))
-}
-
-async fn send_reply<S: AsyncWrite + Unpin>(
-    stream: &mut S,
-    reply_code: u8,
-    bind_addr: Option<SocketAddr>,
-) -> Result<()> {
-    let bind_addr = bind_addr.unwrap_or_else(|| {
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0)
-    });
-
-    let mut reply = vec![
-        SOCKS5_VERSION,
-        reply_code,
-        0x00, // Reserved
-    ];
-
-    match bind_addr {
-        SocketAddr::V4(addr) => {
-            reply.push(SOCKS5_ADDR_TYPE_IPV4);
-            reply.extend_from_slice(&addr.ip().octets());
-            reply.extend_from_slice(&addr.port().to_be_bytes());
-        }
-        SocketAddr::V6(addr) => {
-            reply.push(SOCKS5_ADDR_TYPE_IPV6);
-            reply.extend_from_slice(&addr.ip().octets());
-            reply.extend_from_slice(&addr.port().to_be_bytes());
-        }
-    }
-
-    stream.write_all(&reply).await?;
-    stream.flush().await?;
-
-    Ok(())
-}
-
-async fn handle_tcp_connect<S: AsyncRead + AsyncWrite + Unpin>(
-    mut client_stream: S,
-    target_addr: TargetAddr,
-    config: &SocksConfig,
-) -> Result<()> {
-    let timeout_duration = Duration::from_secs(config.request_timeout);
-
-    // Resolve address if needed
-    let socket_addr = match &target_addr {
-        TargetAddr::Ip(addr) => *addr,
-        TargetAddr::Domain(domain, port) => {
-            tokio::net::lookup_host(format!("{}:{}", domain, port))
-                .await?
-                .next()
-                .context("Failed to resolve domain")?
-        }
-    };
-
-    debug!("Connecting to target: {}", socket_addr);
-
-    // Connect to target with timeout
-    let target_stream = match tokio::time::timeout(
-        timeout_duration,
-        TcpStream::connect(socket_addr),
-    ).await {
-        Ok(Ok(stream)) => stream,
-        Ok(Err(e)) => {
-            let reply_code = match e.kind() {
-                std::io::ErrorKind::ConnectionRefused => SOCKS5_REPLY_CONNECTION_REFUSED,
-                std::io::ErrorKind::TimedOut => SOCKS5_REPLY_HOST_UNREACHABLE,
-                _ => SOCKS5_REPLY_GENERAL_FAILURE,
-            };
-            send_reply(&mut client_stream, reply_code, None).await?;
-            return Err(e.into());
-        }
-        Err(_) => {
-            send_reply(&mut client_stream, SOCKS5_REPLY_HOST_UNREACHABLE, None).await?;
-            anyhow::bail!("Connection timeout");
-        }
-    };
-
-    // Get local address for reply
-    let local_addr = target_stream.local_addr().ok();
-
-    // Send success reply
-    send_reply(&mut client_stream, SOCKS5_REPLY_SUCCEEDED, local_addr).await?;
-
-    info!("SOCKS5 tunnel established to {}", socket_addr);
-
-    // Bidirectional copy
-    let (mut client_read, mut client_write) = tokio::io::split(client_stream);
-    let (mut target_read, mut target_write) = tokio::io::split(target_stream);
-
-    let client_to_target = tokio::io::copy(&mut client_read, &mut target_write);
-    let target_to_client = tokio::io::copy(&mut target_read, &mut client_write);
-
-    tokio::select! {
-        result = client_to_target => {
-            debug!("Client to target finished: {:?}", result);
-        }
-        result = target_to_client => {
-            debug!("Target to client finished: {:?}", result);
-        }
-    }
-
-    Ok(())
+    tokio::time::timeout(timeout, handle_socks5_on_stream(stream, config)).await?
 }
 ```
 
-### 6. In-Memory SSH Handler (`src/ssh/handler.rs`)
-
-The SSH handler uses `russh` to process SSH connections directly from tunnel streams,
-without binding to a local port. This mirrors the SOCKS5 handler architecture.
+#### Authentication (`src/socks/auth/`)
 
 ```rust
-//! SSH Handler - Process SSH sessions from tunnel streams
-//!
-//! Uses russh's `run_stream()` function to handle SSH protocol
-//! on any AsyncRead + AsyncWrite stream (tunnel data channels).
+pub enum AuthMethod {
+    NoAuth,
+    Password,
+}
 
-use std::collections::HashMap;
-use std::sync::Arc;
+pub async fn authenticate<S>(stream: &mut S, config: &SocksConfig) -> Result<AuthMethod> {
+    // 1. Read client's offered methods
+    // 2. Select best method based on config
+    // 3. Perform method-specific authentication
+}
 
-use anyhow::{Context, Result};
-use async_trait::async_trait;
-use russh::server::{Auth, Handle, Handler, Msg, Session};
-use russh::{Channel, ChannelId, CryptoVec, MethodSet};
-use russh_keys::key::PublicKey;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+fn select_auth_method(methods: &[u8], config: &SocksConfig) -> Option<AuthMethod> {
+    // If auth_required, requires Password method
+    // Otherwise, prefers NoAuth
+}
+```
 
-use crate::config::SshConfig;
-use crate::ssh::auth::{AuthContext, AuthResult};
-use crate::ssh::keys::HostKeys;
-use crate::ssh::session::SshSession;
+Password authentication (`src/socks/auth/password.rs`) implements RFC 1929:
+```rust
+impl PasswordAuth {
+    pub async fn authenticate<S>(stream: &mut S, config: &SocksConfig) -> Result<()> {
+        // Read: VER(1) | ULEN(1) | UNAME(1-255) | PLEN(1) | PASSWD(1-255)
+        // Verify credentials against config
+        // Send: VER(1) | STATUS(1)  (0x00 = success, 0x01 = failure)
+    }
+}
+```
 
-/// Handle SSH protocol on a tunnel stream
-///
-/// This is the key integration point - instead of accepting connections
-/// on a local TCP socket, we pass the tunnel stream directly to russh.
-pub async fn handle_ssh_on_stream<S>(
-    stream: S,
-    config: Arc<SshConfig>,
-    host_keys: Arc<HostKeys>,
-) -> Result<()>
+#### TCP Relay (`src/socks/tcp_relay.rs`)
+
+```rust
+pub async fn handle_tcp_connect<S>(
+    stream: &mut S, target: TargetAddr, timeout: u64,
+) -> Result<()> {
+    // 1. Resolve target address
+    // 2. Connect to target with timeout
+    // 3. Send success reply with bind address
+    // 4. Relay data bidirectionally
+}
+
+pub async fn relay_tcp<A, B>(a: A, b: B) -> Result<()>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    // tokio::io::copy_bidirectional for efficient data relay
+}
+```
+
+#### UDP ASSOCIATE (`src/socks/udp/`)
+
+UDP ASSOCIATE operates in "virtual mode" for reverse tunnel compatibility:
+
+```rust
+// src/socks/udp/associate.rs
+pub async fn handle_udp_associate<S>(
+    mut control_stream: S, _client_addr: TargetAddr, _config: &SocksConfig,
+) -> Result<()> {
+    // 1. Send success reply with virtual bind address (0.0.0.0:0)
+    // 2. Monitor control stream for closure
+    // The UDP association lives as long as the TCP control connection
+}
+```
+
+UDP packet encoding (`src/socks/udp/packet.rs`):
+```rust
+pub struct UdpPacket {
+    pub frag: u8,
+    pub addr: TargetAddr,
+    pub data: Bytes,
+}
+
+pub fn parse_udp_packet(data: &[u8]) -> Result<UdpPacket>;
+pub fn encode_udp_packet(packet: &UdpPacket) -> Vec<u8>;
+```
+
+UDP forwarding (`src/socks/udp/forwarder.rs`):
+```rust
+pub struct UdpForwarder {
+    sessions: Arc<RwLock<HashMap<SocketAddr, UdpSession>>>,
+    outbound_tx: mpsc::Sender<UdpPacket>,
+    session_timeout: Duration,  // default: 120s
+}
+
+impl UdpForwarder {
+    pub async fn forward(&self, packet: UdpPacket) -> Result<()>;
+    pub async fn cleanup_expired(&self);
+}
+```
+
+#### Types (`src/socks/types.rs`)
+
+```rust
+pub enum SocksCommand {
+    TcpConnect,    // 0x01
+    TcpBind,       // 0x02
+    UdpAssociate,  // 0x03
+}
+
+pub enum TargetAddr {
+    Ip(SocketAddr),                    // IPv4 or IPv6
+    Domain(String, u16),               // Domain name + port
+}
+
+impl TargetAddr {
+    pub async fn resolve(&self) -> Result<SocketAddr>;
+    pub fn to_bytes(&self) -> Vec<u8>;
+    pub fn port(&self) -> u16;
+    pub fn addr_type(&self) -> u8;
+}
+```
+
+### 6. Embedded SSH Server (`src/ssh/`)
+
+The SSH server is feature-gated behind `#[cfg(feature = "ssh")]`. When the feature is disabled, `handle_ssh_on_stream` returns an error.
+
+#### Entry Point (`src/ssh/mod.rs`)
+
+```rust
+#[cfg(feature = "ssh")]
+pub async fn handle_ssh_on_stream<S>(stream: S, config: Arc<SshConfig>) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    debug!("Starting SSH session on tunnel stream");
+    let russh_config = build_russh_config(&config)?;
+    let pubkey_auth = PublicKeyAuth::from_config(&config)?;
+    let handler = SshHandler::new(config, pubkey_auth);
 
-    // Build russh server config
-    let server_config = build_server_config(&config, &host_keys)?;
-
-    // Create our handler
-    let handler = SockratsSshHandler::new(config.clone());
-
-    // Run SSH protocol on the stream
-    // This is equivalent to russh::server::run_stream()
-    let session = russh::server::run_stream(
-        Arc::new(server_config),
-        stream,
-        handler,
-    ).await.context("Failed to run SSH session")?;
-
-    // Wait for session to complete
-    session.await.context("SSH session error")?;
-
-    info!("SSH session completed");
+    russh::server::run_stream(Arc::new(russh_config), stream, handler).await?;
     Ok(())
 }
 
-/// Build russh server configuration from our SshConfig
-fn build_server_config(
-    config: &SshConfig,
-    host_keys: &HostKeys,
-) -> Result<russh::server::Config> {
-    let mut methods = MethodSet::empty();
-
-    if config.allow_publickey_auth {
-        methods |= MethodSet::PUBLICKEY;
-    }
-    if config.allow_password_auth {
-        methods |= MethodSet::PASSWORD;
-    }
-
-    Ok(russh::server::Config {
-        methods,
-        keys: host_keys.get_keys()?,
-        auth_rejection_time: std::time::Duration::from_secs(1),
-        auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
-        connection_timeout: Some(std::time::Duration::from_secs(
-            config.connection_timeout
-        )),
-        ..Default::default()
-    })
+pub async fn handle_ssh_with_timeout<S>(
+    stream: S, config: Arc<SshConfig>, timeout: Duration,
+) -> Result<()> {
+    tokio::time::timeout(timeout, handle_ssh_on_stream(stream, config)).await?
 }
 
-/// SSH Handler implementation for Sockrats
-///
-/// Implements russh::server::Handler to process SSH sessions
-pub struct SockratsSshHandler {
-    config: Arc<SshConfig>,
-    auth_context: AuthContext,
-    sessions: Arc<Mutex<HashMap<ChannelId, SshSession>>>,
-    auth_attempts: u32,
-}
-
-impl SockratsSshHandler {
-    pub fn new(config: Arc<SshConfig>) -> Self {
-        Self {
-            auth_context: AuthContext::new(config.clone()),
-            config,
-            sessions: Arc::new(Mutex::new(HashMap::new())),
-            auth_attempts: 0,
-        }
-    }
-}
-
-/// Handler trait implementation for russh server
-#[async_trait]
-impl Handler for SockratsSshHandler {
-    type Error = anyhow::Error;
-
-    /// Called when client requests password authentication
-    async fn auth_password(
-        &mut self,
-        user: &str,
-        password: &str,
-    ) -> Result<Auth, Self::Error> {
-        if !self.config.allow_password_auth {
-            return Ok(Auth::Reject {
-                proceed_with_methods: None,
-            });
-        }
-
-        self.auth_attempts += 1;
-        if self.auth_attempts > self.config.max_auth_attempts {
-            warn!("Max auth attempts exceeded for user: {}", user);
-            return Ok(Auth::Reject {
-                proceed_with_methods: None,
-            });
-        }
-
-        match self.auth_context.verify_password(user, password).await {
-            AuthResult::Success => {
-                info!("Password auth successful for user: {}", user);
-                Ok(Auth::Accept)
-            }
-            AuthResult::Failure => {
-                warn!("Password auth failed for user: {}", user);
-                Ok(Auth::Reject {
-                    proceed_with_methods: Some(MethodSet::all()),
-                })
-            }
-        }
-    }
-
-    /// Called when client requests public key authentication
-    async fn auth_publickey(
-        &mut self,
-        user: &str,
-        public_key: &PublicKey,
-    ) -> Result<Auth, Self::Error> {
-        if !self.config.allow_publickey_auth {
-            return Ok(Auth::Reject {
-                proceed_with_methods: None,
-            });
-        }
-
-        match self.auth_context.verify_publickey(user, public_key).await {
-            AuthResult::Success => {
-                info!("Public key auth successful for user: {}", user);
-                Ok(Auth::Accept)
-            }
-            AuthResult::Failure => {
-                warn!("Public key auth failed for user: {}", user);
-                Ok(Auth::Reject {
-                    proceed_with_methods: Some(MethodSet::all()),
-                })
-            }
-        }
-    }
-
-    /// Called when a new session channel is opened
-    async fn channel_open_session(
-        &mut self,
-        channel: Channel<Msg>,
-        session: &mut Session,
-    ) -> Result<bool, Self::Error> {
-        let channel_id = channel.id();
-        debug!("Channel open session: {:?}", channel_id);
-
-        // Create a new session handler
-        let ssh_session = SshSession::new(
-            channel,
-            self.config.clone(),
-        );
-
-        self.sessions.lock().await.insert(channel_id, ssh_session);
-
-        Ok(true)
-    }
-
-    /// Called when client requests a PTY
-    async fn pty_request(
-        &mut self,
-        channel_id: ChannelId,
-        term: &str,
-        col_width: u32,
-        row_height: u32,
-        pix_width: u32,
-        pix_height: u32,
-        modes: &[(russh::Pty, u32)],
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        debug!(
-            "PTY request: term={}, cols={}, rows={}",
-            term, col_width, row_height
-        );
-
-        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
-            ssh_session.set_pty(term, col_width, row_height, pix_width, pix_height);
-        }
-
-        Ok(())
-    }
-
-    /// Called when client requests shell access
-    async fn shell_request(
-        &mut self,
-        channel_id: ChannelId,
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        if !self.config.enable_shell {
-            warn!("Shell access disabled");
-            return Ok(());
-        }
-
-        debug!("Shell request for channel: {:?}", channel_id);
-
-        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
-            ssh_session.start_shell(session).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Called when client requests command execution
-    async fn exec_request(
-        &mut self,
-        channel_id: ChannelId,
-        data: &[u8],
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        if !self.config.enable_exec {
-            warn!("Exec access disabled");
-            return Ok(());
-        }
-
-        let command = String::from_utf8_lossy(data);
-        debug!("Exec request: {}", command);
-
-        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
-            ssh_session.exec_command(&command, session).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Called when client requests SFTP subsystem
-    async fn subsystem_request(
-        &mut self,
-        channel_id: ChannelId,
-        name: &str,
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        debug!("Subsystem request: {}", name);
-
-        if name == "sftp" && self.config.enable_sftp {
-            if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
-                ssh_session.start_sftp(session).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Called when data is received on a channel
-    async fn data(
-        &mut self,
-        channel_id: ChannelId,
-        data: &[u8],
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        if let Some(ssh_session) = self.sessions.lock().await.get_mut(&channel_id) {
-            ssh_session.handle_data(data, session).await?;
-        }
-
-        Ok(())
-    }
-
-    /// Called when channel EOF is received
-    async fn channel_eof(
-        &mut self,
-        channel_id: ChannelId,
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        debug!("Channel EOF: {:?}", channel_id);
-
-        if let Some(mut ssh_session) = self.sessions.lock().await.remove(&channel_id) {
-            ssh_session.close().await?;
-        }
-
-        Ok(())
-    }
-
-    /// Called when channel is closed
-    async fn channel_close(
-        &mut self,
-        channel_id: ChannelId,
-        session: &mut Session,
-    ) -> Result<(), Self::Error> {
-        debug!("Channel close: {:?}", channel_id);
-
-        self.sessions.lock().await.remove(&channel_id);
-
-        Ok(())
-    }
+fn build_russh_config(config: &SshConfig) -> Result<russh::server::Config> {
+    // Load or generate host key
+    // Set inactivity_timeout, auth_rejection_time, server_id
+    // Configure keys = vec![host_key]
 }
 ```
 
-### 7. Main Entry Point (`src/main.rs`)
+#### SSH Configuration (`src/ssh/config.rs`)
 
 ```rust
-use anyhow::Result;
-use clap::Parser;
-use sockrats::config::Config;
-use sockrats::client::run_client;
-use std::path::PathBuf;
-use tokio::sync::broadcast;
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+#[derive(Debug, Clone, Deserialize)]
+pub struct SshConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub auth_methods: Vec<String>,        // ["password", "publickey"]
+    pub authorized_keys: Option<PathBuf>,
+    pub host_key: Option<PathBuf>,
+    pub password: Option<String>,
+    pub username: Option<String>,
+    pub server_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub shell: bool,
+    #[serde(default = "default_true")]
+    pub exec: bool,
+    #[serde(default)]
+    pub sftp: bool,
+    #[serde(default = "default_true")]
+    pub pty: bool,
+    #[serde(default)]
+    pub tcp_forwarding: bool,
+    #[serde(default)]
+    pub x11_forwarding: bool,
+    #[serde(default)]
+    pub agent_forwarding: bool,
+    #[serde(default = "default_max_auth_tries")]
+    pub max_auth_tries: u32,              // default: 6
+    #[serde(default = "default_connection_timeout")]
+    pub connection_timeout: u64,          // default: 300 seconds
+    #[serde(default = "default_shell")]
+    pub default_shell: String,            // default: "/bin/sh" (Unix) or "cmd.exe" (Windows)
+}
 
+impl SshConfig {
+    pub fn has_publickey_auth(&self) -> bool;
+    pub fn has_password_auth(&self) -> bool;
+    pub fn has_valid_auth(&self) -> bool;
+    pub fn validate(&self) -> Result<(), String>;
+}
+```
+
+#### SSH Handler (`src/ssh/handler.rs`)
+
+Implements `russh::server::Handler`:
+
+```rust
+pub struct SshHandler {
+    config: Arc<SshConfig>,
+    pubkey_auth: Option<PublicKeyAuth>,
+    session_state: SharedSessionState,
+    shell_manager: ShellManager,
+}
+
+impl Handler for SshHandler {
+    type Error = anyhow::Error;
+
+    async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth>;
+    async fn auth_publickey_offered(&mut self, user: &str, key: &PublicKey) -> Result<Auth>;
+    async fn auth_publickey(&mut self, user: &str, key: &PublicKey) -> Result<Auth>;
+    async fn channel_open_session(&mut self, channel: Channel<Msg>, session: &mut Session) -> Result<bool>;
+    async fn pty_request(&mut self, channel_id: ChannelId, term: &str, col: u32, row: u32, pix_width: u32, pix_height: u32, modes: &[(Pty, u32)], session: &mut Session) -> Result<()>;
+    async fn shell_request(&mut self, channel_id: ChannelId, session: &mut Session) -> Result<()>;
+    async fn exec_request(&mut self, channel_id: ChannelId, data: &[u8], session: &mut Session) -> Result<()>;
+    async fn env_request(&mut self, channel_id: ChannelId, name: &str, value: &str, session: &mut Session) -> Result<()>;
+    async fn window_change_request(&mut self, channel_id: ChannelId, col: u32, row: u32, pix_width: u32, pix_height: u32, session: &mut Session) -> Result<()>;
+    async fn channel_close(&mut self, channel_id: ChannelId, session: &mut Session) -> Result<()>;
+    async fn data(&mut self, channel_id: ChannelId, data: &[u8], session: &mut Session) -> Result<()>;
+    async fn subsystem_request(&mut self, channel_id: ChannelId, name: &str, session: &mut Session) -> Result<()>;
+}
+```
+
+#### Session State (`src/ssh/session.rs`)
+
+```rust
+pub enum ChannelType {
+    Session,
+    DirectTcpip,
+}
+
+pub struct ChannelState {
+    pub channel_type: ChannelType,
+    pub has_pty: bool,
+    pub term: Option<String>,
+    pub cols: u32,
+    pub rows: u32,
+    pub pix_width: u32,
+    pub pix_height: u32,
+    pub env: HashMap<String, String>,
+}
+
+pub struct SessionState {
+    pub authenticated: bool,
+    pub username: Option<String>,
+    pub auth_attempts: u32,
+    pub max_auth_attempts: u32,
+    pub channels: HashMap<u32, ChannelState>,
+}
+
+pub type SharedSessionState = Arc<Mutex<SessionState>>;
+```
+
+#### Process Management (`src/ssh/process.rs`)
+
+```rust
+pub struct ShellProcess {
+    stdin_tx: mpsc::Sender<Vec<u8>>,
+}
+
+pub struct PtyConfig {
+    pub term: String,         // default: "xterm-256color"
+    pub cols: u16,            // default: 80
+    pub rows: u16,            // default: 24
+    pub pix_width: u16,       // default: 0
+    pub pix_height: u16,      // default: 0
+}
+
+pub struct ShellManager {
+    shells: Arc<Mutex<HashMap<u32, ShellProcess>>>,
+}
+
+impl ShellManager {
+    pub async fn spawn_shell(
+        &self, channel_id: u32, session: Handle, pty_config: Option<PtyConfig>,
+        env: HashMap<String, String>, default_shell: &str,
+    ) -> Result<()>;
+
+    async fn spawn_shell_with_pty(/* ... */) -> Result<ShellProcess>;
+    // Uses portable-pty crate for real PTY allocation
+
+    async fn spawn_shell_no_pty(/* ... */) -> Result<ShellProcess>;
+    // Falls back to tokio::process::Command with pipes
+
+    pub async fn write_to_shell(&self, channel_id: u32, data: &[u8]) -> Result<bool>;
+    pub async fn remove_shell(&self, channel_id: u32);
+    pub async fn has_shell(&self, channel_id: u32) -> bool;
+}
+
+pub async fn exec_command(
+    command: &str, session: Handle, channel_id: ChannelId,
+    env: HashMap<String, String>,
+) -> Result<()>;
+// Executes a one-shot command and streams stdout/stderr back
+```
+
+#### Host Key Management (`src/ssh/keys.rs`)
+
+```rust
+pub fn load_host_key(path: &Path) -> Result<PrivateKey>;
+pub fn generate_ed25519_key() -> Result<PrivateKey>;
+pub fn save_host_key(key: &PrivateKey, path: &Path) -> Result<()>;
+pub fn key_fingerprint(key: &PrivateKey) -> String;
+```
+
+When no `host_key` path is configured, `build_russh_config` generates an ephemeral Ed25519 key.
+
+#### SSH Authentication (`src/ssh/auth/`)
+
+```rust
+// src/ssh/auth/mod.rs
+pub enum AuthResult {
+    Success,
+    Failure,
+    Partial,
+}
+
+// src/ssh/auth/password.rs
+pub fn verify_password(config: &SshConfig, username: &str, password: &str) -> bool;
+// Uses constant_time_compare() to prevent timing attacks
+
+// src/ssh/auth/publickey.rs
+pub struct PublicKeyAuth {
+    authorized_keys: AuthorizedKeys,
+}
+pub fn verify_public_key(auth: Option<&PublicKeyAuth>, config: &SshConfig, key: &PublicKey) -> bool;
+
+// src/ssh/auth/authorized_keys.rs
+pub struct AuthorizedKey {
+    pub key: PublicKey,
+    pub comment: Option<String>,
+    pub options: HashMap<String, Option<String>>,  // e.g., command="/bin/false", no-pty
+}
+
+pub struct AuthorizedKeys { keys: Vec<AuthorizedKey> }
+impl AuthorizedKeys {
+    pub fn from_file(path: &Path) -> Result<Self>;
+    pub fn parse(content: &str) -> Result<Self>;
+    pub fn is_authorized(&self, key: &PublicKey) -> bool;  // Compares SHA-256 fingerprints
+    pub fn get_options(&self, key: &PublicKey) -> Option<&HashMap<String, Option<String>>>;
+}
+```
+
+### 7. Connection Pool (`src/pool/`)
+
+#### Pool Types (`src/pool/mod.rs`)
+
+```rust
+pub enum ChannelType {
+    Tcp,
+    Udp,
+}
+
+pub async fn create_pool<T: Transport + 'static>(/* ... */) -> Result<Arc<TcpChannelPool<T>>>;
+```
+
+#### Pooled Channel (`src/pool/channel.rs`)
+
+```rust
+pub struct PooledChannel<S> {
+    stream: S,
+    channel_type: ChannelType,
+    created_at: Instant,
+    last_used: Instant,
+}
+
+impl<S> PooledChannel<S> {
+    pub fn new_tcp(stream: S) -> Self;
+    pub fn new_udp(stream: S) -> Self;
+    pub fn is_stale(&self, idle_timeout: Duration) -> bool;
+    pub fn touch(&mut self);
+    pub fn into_stream(self) -> S;
+}
+```
+
+#### RAII Guard (`src/pool/guard.rs`)
+
+```rust
+pub struct PooledChannelGuard<S: Send + 'static> {
+    stream: Option<S>,
+    return_tx: mpsc::Sender<ReturnedChannel<S>>,
+    is_tcp: bool,
+}
+
+pub struct ReturnedChannel<S> {
+    pub stream: S,
+    pub is_tcp: bool,
+}
+
+impl<S: Send + 'static> Drop for PooledChannelGuard<S> {
+    fn drop(&mut self) {
+        // Automatically returns the stream to the pool via mpsc channel
+    }
+}
+
+impl<S: Send + 'static> Deref for PooledChannelGuard<S> { /* ... */ }
+impl<S: Send + 'static> DerefMut for PooledChannelGuard<S> { /* ... */ }
+```
+
+#### TCP Channel Pool (`src/pool/tcp_pool.rs`)
+
+```rust
+pub struct TcpChannelPool<T: Transport> {
+    config: PoolConfig,
+    transport: Arc<T>,
+    remote_addr: AddrMaybeCached,
+    session_key: Digest,
+    channels: Mutex<VecDeque<PooledChannel<T::Stream>>>,
+    create_semaphore: Semaphore,
+    available_notify: Notify,
+    active_count: AtomicUsize,
+    manager: PoolManager,
+    return_tx: mpsc::Sender<ReturnedChannel<T::Stream>>,
+}
+
+impl<T: Transport + 'static> TcpChannelPool<T> {
+    pub async fn new(config, transport, remote_addr, session_key) -> Result<Arc<Self>>;
+    // Creates pool, starts return handler, warms up, starts maintenance task
+
+    async fn warm_up(self: &Arc<Self>) -> Result<()>;
+    // Pre-creates min_tcp_channels connections
+
+    async fn create_channel(&self) -> Result<()>;
+    // Establishes a data channel: connect → Hello → read DataChannelCmd
+
+    pub async fn acquire(&self) -> Result<PooledChannelGuard<T::Stream>>;
+    // Gets channel from pool, removes stale, creates on-demand, waits with timeout
+
+    async fn run_return_handler(self: Arc<Self>, rx: mpsc::Receiver<ReturnedChannel<T::Stream>>);
+    // Receives returned channels and adds back to pool
+
+    async fn run_maintenance(self: Arc<Self>);
+    // Periodic: replenish to min channels, log health stats
+
+    pub fn shutdown(&self);
+    pub fn stats(&self) -> &PoolStats;
+}
+```
+
+#### Pool Manager (`src/pool/manager.rs`)
+
+```rust
+pub struct PoolStats {
+    // AtomicUsize counters: created, acquired, returned, expired, pooled
+}
+
+pub struct PoolStatsSnapshot {
+    pub created: usize,
+    pub acquired: usize,
+    pub returned: usize,
+    pub expired: usize,
+    pub pooled: usize,
+}
+
+pub struct PoolManager {
+    config: PoolConfig,
+    stats: Arc<PoolStats>,
+    shutdown: CancellationToken,  // or similar
+}
+
+impl PoolManager {
+    pub fn new(config: PoolConfig, stats: Arc<PoolStats>) -> Self;
+    pub fn stats(&self) -> &PoolStats;
+    pub fn shutdown(&self);
+    pub fn log_health(&self);
+    pub fn health_check_interval(&self) -> Duration;
+    pub async fn wait_shutdown(&self);
+}
+```
+
+### 8. Error Types (`src/error.rs`)
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum SockratsError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("SOCKS5 error: {0}")]
+    Socks5(#[from] Socks5Error),
+    #[error("Protocol error: {0}")]
+    Protocol(String),
+    #[error("Transport error: {0}")]
+    Transport(String),
+    #[error("Configuration error: {0}")]
+    Config(String),
+    // ... more variants
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Socks5Error {
+    #[error("Invalid SOCKS version: {0}")]
+    InvalidVersion(u8),
+    #[error("Unsupported command: {0}")]
+    UnsupportedCommand(u8),
+    #[error("Authentication failed")]
+    AuthFailed,
+    #[error("Connection refused")]
+    ConnectionRefused,
+    // ... more variants
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Socks5ReplyCode {
+    Succeeded = 0x00,
+    GeneralFailure = 0x01,
+    ConnectionNotAllowed = 0x02,
+    NetworkUnreachable = 0x03,
+    HostUnreachable = 0x04,
+    ConnectionRefused = 0x05,
+    TtlExpired = 0x06,
+    CommandNotSupported = 0x07,
+    AddressTypeNotSupported = 0x08,
+}
+```
+
+### 9. Helper Utilities (`src/helper.rs`)
+
+```rust
+pub const CHAN_SIZE: usize = 2048;
+pub const TCP_POOL_SIZE: usize = 64;
+pub const UDP_POOL_SIZE: usize = 64;
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub async fn copy_bidirectional<A, B>(a: &mut A, b: &mut B) -> io::Result<(u64, u64)>;
+
+pub struct RetryConfig {
+    pub max_retries: u32,
+    pub base_delay: Duration,
+    pub max_delay: Duration,
+}
+
+impl RetryConfig {
+    pub fn new(max_retries: u32) -> Self;
+    pub fn delay_for_attempt(&self, attempt: u32) -> Duration;
+    // Exponential backoff: min(base_delay * 2^attempt, max_delay)
+}
+```
+
+### 10. Main Entry Point (`src/main.rs`)
+
+```rust
 #[derive(Parser, Debug)]
 #[command(name = "sockrats")]
-#[command(author, version, about = "Reverse SOCKS5 tunneling client", long_about = None)]
 struct Args {
     /// Path to configuration file
     #[arg(short, long)]
@@ -1888,1480 +1483,316 @@ struct Args {
     /// Log level (trace, debug, info, warn, error)
     #[arg(short, long, default_value = "info")]
     log_level: String,
+
+    /// Enable JSON logging format
+    #[arg(long)]
+    json_log: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    setup_logging(&args.log_level, args.json_log)?;
 
-    // Setup logging
-    let level = match args.log_level.to_lowercase().as_str() {
-        "trace" => Level::TRACE,
-        "debug" => Level::DEBUG,
-        "info" => Level::INFO,
-        "warn" => Level::WARN,
-        "error" => Level::ERROR,
-        _ => Level::INFO,
-    };
+    let config = load_config(&args.config)?;
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(level)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
-
-    // Load configuration
-    let config_str = std::fs::read_to_string(&args.config)?;
-    let config: Config = toml::from_str(&config_str)?;
-
-    info!("Starting Sockrats client");
-    info!("Connecting to: {}", config.client.remote_addr);
-
-    // Setup shutdown signal
+    // Shutdown signal handling (cross-platform)
     let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
-
-    // Handle Ctrl+C
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Failed to listen for Ctrl+C");
-        info!("Shutdown signal received");
+        #[cfg(unix)]
+        {
+            // Handle both Ctrl+C and SIGTERM
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = signal(SignalKind::terminate()).recv() => {}
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::signal::ctrl_c().await;
+        }
         let _ = shutdown_tx.send(true);
     });
 
-    // Run client
     run_client(config, shutdown_rx).await
+}
+
+fn setup_logging(level: &str, json: bool) -> Result<()> {
+    // Supports JSON output via tracing-subscriber's json() formatter
+    // Used for structured logging in production deployments
 }
 ```
 
----
+### 11. Library Root (`src/lib.rs`)
+
+```rust
+#![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
+
+pub mod client;
+pub mod config;
+pub mod error;
+pub mod helper;
+pub mod pool;
+pub mod protocol;
+pub mod socks;
+pub mod ssh;
+pub mod transport;
+
+pub use client::run_client;
+pub use config::{load_config, Config};
+pub use error::{Socks5Error, SockratsError};
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const NAME: &str = env!("CARGO_PKG_NAME");
+```
 
 ## Example Configuration (`examples/config.toml`)
 
+### Minimal Configuration
+
 ```toml
+# examples/config-minimal.toml
 [client]
-# Remote rathole server address
 remote_addr = "server.example.com:2333"
-
-# Authentication token (must match server)
+service_name = "socks5"
 token = "your-secret-token"
+```
 
-# Heartbeat timeout in seconds
+### Full Configuration
+
+```toml
+# examples/config.toml
+[client]
+remote_addr = "server.example.com:2333"
+service_name = "socks5"
+token = "your-secret-token"
 heartbeat_timeout = 40
 
 [client.transport]
-type = "tcp"  # or "tls", "noise", "websocket"
+type = "tcp"
 
 [client.transport.tcp]
 nodelay = true
 keepalive_secs = 20
 keepalive_interval = 8
 
-# Uncomment for TLS transport
+# TLS transport (uncomment to use)
 # [client.transport.tls]
 # hostname = "server.example.com"
 # trusted_root = "/path/to/ca.crt"
+# skip_verify = false
 
-# Uncomment for Noise transport
+# Noise transport (uncomment to use)
 # [client.transport.noise]
 # pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
-# remote_public_key = "base64-encoded-key"
+# remote_public_key = "base64-encoded-server-public-key"
+# local_private_key = "base64-encoded-client-private-key"
 
-# =====================
-# SOCKS5 Service Config
-# =====================
-[client.services.socks]
-# Service name (must match server configuration)
-service_name = "socks5"
-
-# Require SOCKS5 authentication
+[client.socks]
 auth_required = false
-
-# Credentials (if auth_required = true)
 # username = "user"
 # password = "pass"
-
-# Allow UDP ASSOCIATE command
-allow_udp = true
-
-# Resolve DNS on the client side
+allow_udp = false
 dns_resolve = true
-
-# Connection timeout in seconds
 request_timeout = 10
 
-# =====================
-# SSH Service Config
-# =====================
-[client.services.ssh]
-# Service name (must match server configuration)
-service_name = "ssh"
+# SSH server (uncomment to enable)
+# [client.ssh]
+# enabled = true
+# auth_methods = ["password", "publickey"]
+# host_key = "/path/to/host_key"
+# username = "admin"
+# password = "secret"
+# authorized_keys = "/path/to/authorized_keys"
+# shell = true
+# exec = true
+# sftp = false
+# pty = true
+# tcp_forwarding = false
+# max_auth_tries = 6
+# connection_timeout = 300
 
-# Path to host private key (will be generated if not exists)
-host_key_path = "/etc/sockrats/host_key"
-
-# Authentication methods
-allow_password_auth = true
-allow_publickey_auth = true
-
-# Path to authorized_keys file (OpenSSH format)
-authorized_keys_path = "/etc/sockrats/authorized_keys"
-
-# Connection timeout in seconds
-connection_timeout = 60
-
-# Maximum authentication attempts
-max_auth_attempts = 3
-
-# Enable subsystems and features
-enable_sftp = true
-enable_shell = true
-enable_exec = true
-
-# User configuration
-[client.services.ssh.users.admin]
-password = "admin-password"  # Only used if allow_password_auth = true
-home_dir = "/home/admin"
-shell = "/bin/bash"
-
-[client.services.ssh.users.guest]
-password = "guest-password"
-home_dir = "/tmp/guest"
-shell = "/bin/sh"
+[client.pool]
+min_tcp_channels = 2
+max_tcp_channels = 10
+min_udp_channels = 1
+max_udp_channels = 5
+idle_timeout = 300
+health_check_interval = 30
+acquire_timeout = 10
 ```
 
----
+### Multi-Service Configuration
+
+```toml
+# examples/config-multiple-minimal.toml
+[client]
+remote_addr = "rathole.example.com:2333"
+
+# SOCKS5 service
+[[client.services]]
+name = "socks5"
+token = "socks5-token"
+service_type = "socks5"
+
+# SSH service
+[[client.services]]
+name = "ssh"
+token = "ssh-token"
+service_type = "ssh"
+ssh.password = "ssh-password"
+ssh.authorized_keys = "/path/to/authorized_keys"
+```
 
 ## Rathole Server Configuration
 
-For the remote rathole server, configure both SOCKS5 and SSH services:
+The rathole server must be configured with matching service names and tokens:
 
 ```toml
+# rathole server.toml
 [server]
 bind_addr = "0.0.0.0:2333"
-default_token = "your-secret-token"
 
-# SOCKS5 service - clients connect here to use SOCKS5 proxy
 [server.services.socks5]
-type = "tcp"
-bind_addr = "0.0.0.0:1080"
+token = "socks5-token"
+bind_addr = "0.0.0.0:1080"   # SOCKS5 clients connect here
 
-# SSH service - clients connect here to use SSH server
 [server.services.ssh]
-type = "tcp"
-bind_addr = "0.0.0.0:2222"
+token = "ssh-token"
+bind_addr = "0.0.0.0:2222"   # SSH clients connect here
 ```
-
----
 
 ## Data Flow
 
 ### Connection Establishment
 
-```
-1. Sockrats Client                    Rathole Server                 SOCKS5 Client
-        |                                   |                              |
-        |---(TCP/TLS/Noise/WS connect)----->|                              |
-        |                                   |                              |
-        |<---(Control Channel Hello)--------|                              |
-        |                                   |                              |
-        |---(Auth)------------------------->|                              |
-        |                                   |                              |
-        |<---(Ack: OK)----------------------|                              |
-        |                                   |                              |
-        |   [Control Channel Established]   |                              |
-        |                                   |                              |
+```text
+1. Sockrats starts and reads config
+2. For each service in effective_services():
+   a. Creates a ControlChannel<T> with service-specific config
+   b. ControlChannel connects to rathole server
+   c. Sends Hello::ControlChannelHello with service_name digest
+   d. Receives server Hello (contains nonce)
+   e. Sends Auth with SHA-256(token + nonce)
+   f. Receives Ack (Ok/AuthFailed/ServiceNotExist)
+   g. Enters command loop: reads ControlChannelCmd
+3. On CreateDataChannel:
+   a. Spawns run_data_channel() task
+   b. Connects new stream, sends DataChannelHello
+   c. Reads DataChannelCmd (StartForwardTcp/StartForwardUdp)
+   d. Routes to appropriate handler via ServiceHandler enum
 ```
 
 ### SOCKS5 Request Handling
 
-```
-2. Sockrats Client                    Rathole Server                 SOCKS5 Client
-        |                                   |                              |
-        |                                   |<---(SOCKS5 connect)----------|
-        |                                   |                              |
-        |<---(CreateDataChannel cmd)--------|                              |
-        |                                   |                              |
-        |---(Data Channel Hello)----------->|                              |
-        |                                   |                              |
-        |<---(StartForwardTcp)--------------|                              |
-        |                                   |                              |
-        |<===(SOCKS5 handshake via tunnel)==|<===(SOCKS5 handshake)========|
-        |                                   |                              |
-        |   [SOCKS5 auth negotiation]       |                              |
-        |                                   |                              |
-        |<===(SOCKS5 CONNECT request)=======|<===(SOCKS5 CONNECT)==========|
-        |                                   |                              |
-        |---(TCP connect to target)---------|                              |
-        |                                   |                              |
-        |===(SOCKS5 reply via tunnel)======>|====(SOCKS5 reply)==========>|
-        |                                   |                              |
-        |<==(bidirectional data relay)=====>|<===(bidirectional relay)====>|
-        |                                   |                              |
+```text
+1. Data channel receives StartForwardTcp
+2. ServiceHandler::Socks5 → handle_socks5_on_stream()
+3. Authentication negotiation (NoAuth or Password per RFC 1929)
+4. Parse SOCKS5 command (CONNECT or UDP ASSOCIATE)
+5. For CONNECT:
+   a. Resolve target address
+   b. Establish TCP connection to target
+   c. Send SOCKS5 success reply with bind address
+   d. Relay data bidirectionally (tunnel ↔ target)
+6. For UDP ASSOCIATE:
+   a. Send success with virtual bind address (0.0.0.0:0)
+   b. Monitor control stream for closure
 ```
 
----
+### SSH Request Handling
 
-## Key Integration Points
-
-### 1. Replacing `run_data_channel_for_tcp` (from rathole)
-
-**Original rathole code:**
-```rust
-async fn run_data_channel_for_tcp<T: Transport>(
-    mut conn: T::Stream,
-    local_addr: &str,
-) -> Result<()> {
-    let mut local = TcpStream::connect(local_addr).await?;
-    let _ = copy_bidirectional(&mut conn, &mut local).await;
-    Ok(())
-}
+```text
+1. Data channel receives StartForwardTcp
+2. ServiceHandler::Ssh → handle_ssh_on_stream()
+3. build_russh_config() loads/generates host key
+4. russh::server::run_stream() takes over the connection
+5. SshHandler processes SSH protocol:
+   a. Authentication (password or publickey)
+   b. Channel open (session, direct-tcpip)
+   c. PTY request → ShellManager::spawn_shell_with_pty() (portable-pty)
+   d. Shell request → ShellManager::spawn_shell() (PTY or pipe fallback)
+   e. Exec request → exec_command() (one-shot command)
+   f. Data → write to shell stdin
+   g. Shell stdout/stderr → send back to SSH client
 ```
 
-**New Sockrats code:**
-```rust
-async fn run_data_channel_for_tcp<T: Transport>(
-    conn: T::Stream,
-    socks_config: &SocksConfig,
-) -> Result<()> {
-    // Instead of connecting to a local address,
-    // process the tunnel stream as a SOCKS5 request
-    handle_socks5_on_stream(conn, socks_config).await
-}
-```
+### Service Handler Routing
 
-### 2. The `handle_socks5_on_stream` Function
-
-This is the critical bridge between rathole's transport and fast-socks5's protocol handling:
-
-- Takes the tunnel stream directly (no local socket binding)
-- Implements SOCKS5 protocol in-memory
-- Performs authentication if configured
-- Reads CONNECT command and target address
-- Establishes outbound connection to actual target
-- Relays data bidirectionally
-
-### 3. Authentication Flow
-
-```
-Tunnel Stream                 Sockrats Handler              Target
-    |                              |                          |
-    |--[SOCKS5 Ver + Methods]----->|                          |
-    |                              |                          |
-    |<-[Selected Method]-----------|                          |
-    |                              |                          |
-    |--[Username/Password]-------->| (if auth required)       |
-    |                              |                          |
-    |<-[Auth Result]---------------|                          |
-    |                              |                          |
-    |--[CONNECT cmd + target]----->|                          |
-    |                              |---[TCP Connect]--------->|
-    |                              |<--[Connected]------------|
-    |<-[SOCKS5 Reply]--------------|                          |
-    |                              |                          |
-    |<======[Bidirectional Relay]======>                      |
-```
-
-### 4. SSH Server Integration (using russh)
-
-Similar to SOCKS5, the SSH server processes tunnel streams directly using `russh::server::run_stream()`:
-
-**Original rathole code (connects to local SSH server):**
-```rust
-async fn run_data_channel_for_tcp<T: Transport>(
-    mut conn: T::Stream,
-    local_addr: &str,  // e.g., "127.0.0.1:22"
-) -> Result<()> {
-    let mut local = TcpStream::connect(local_addr).await?;
-    let _ = copy_bidirectional(&mut conn, &mut local).await;
-    Ok(())
-}
-```
-
-**New Sockrats code (embedded SSH server):**
-```rust
-async fn run_data_channel_for_ssh<T: Transport>(
-    conn: T::Stream,
-    ssh_config: &SshConfig,
-    host_keys: &HostKeys,
-) -> Result<()> {
-    // Instead of connecting to a local SSH server,
-    // process the tunnel stream as an SSH connection
-    handle_ssh_on_stream(conn, ssh_config, host_keys).await
-}
-```
-
-### 5. The `handle_ssh_on_stream` Function
-
-This is the critical bridge between rathole's transport and russh's SSH protocol:
-
-- Takes the tunnel stream directly (no local socket binding)
-- Passes stream to `russh::server::run_stream()` for SSH protocol handling
-- Implements authentication (password and/or public key)
-- Handles channel requests (shell, exec, SFTP)
-- Processes data on channels bidirectionally
-
-### 6. SSH Authentication Flow
-
-```
-Tunnel Stream                 Sockrats SSH Handler          Local Shell/Exec
-    |                              |                              |
-    |--[SSH Protocol Version]----->|                              |
-    |<-[SSH Protocol Version]------|                              |
-    |                              |                              |
-    |--[Key Exchange Init]-------->|                              |
-    |<-[Key Exchange Reply]--------|                              |
-    |                              |                              |
-    |--[New Keys]----------------->|                              |
-    |<-[New Keys]------------------|                              |
-    |                              |                              |
-    |--[Service Request: auth]---->|                              |
-    |<-[Service Accept]------------|                              |
-    |                              |                              |
-    |--[Auth: publickey/password]->| (verify against config)      |
-    |<-[Auth Success]--------------|                              |
-    |                              |                              |
-    |--[Channel Open: session]---->|                              |
-    |<-[Channel Open Confirm]------|                              |
-    |                              |                              |
-    |--[PTY Request]-------------->| (optional)                   |
-    |<-[Success]-------------------|                              |
-    |                              |                              |
-    |--[Shell/Exec Request]------->|---[spawn process]----------->|
-    |<-[Success]-------------------|                              |
-    |                              |                              |
-    |<======[Bidirectional Data]=====>                            |
-```
-
----
-
-## UDP ASSOCIATE Implementation
-
-UDP ASSOCIATE is a mandatory feature that enables DNS queries, gaming protocols, and other UDP-based traffic through the SOCKS5 tunnel.
-
-### UDP Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              UDP ASSOCIATE FLOW                                 │
-│                                                                                 │
-│  SOCKS5 Client              Rathole Server              Sockrats Client         │
-│       │                          │                           │                  │
-│       │──[UDP ASSOCIATE cmd]────►│───[via tunnel]───────────►│                  │
-│       │                          │                           │                  │
-│       │◄─[BND.ADDR:PORT reply]───│◄──[via tunnel]────────────│                  │
-│       │                          │                           │                  │
-│       │     ┌────────────────────┼───────────────────────────┼──────────┐       │
-│       │     │         UDP Data Channel (separate tunnel)     │          │       │
-│       │     │                    │                           │          │       │
-│       │═════│═[UDP datagram]════►│═══[encapsulated]═════════►│          │       │
-│       │     │                    │                           │──►Target │       │
-│       │◄════│═[UDP response]═════│◄══[encapsulated]══════════│◄──       │       │
-│       │     │                    │                           │          │       │
-│       │     └────────────────────┼───────────────────────────┼──────────┘       │
-│       │                          │                           │                  │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### UDP ASSOCIATE Handler (`src/socks/udp_relay.rs`)
+The `determine_service_handler()` method in `ControlChannel` determines the handler:
 
 ```rust
-use crate::config::SocksConfig;
-use crate::pool::ChannelPool;
-use anyhow::{Context, Result};
-use bytes::{Bytes, BytesMut};
-use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, RwLock};
-use tokio::time::timeout;
-use tracing::{debug, error, info, warn};
-
-/// UDP packet header as per RFC 1928
-/// +----+------+------+----------+----------+----------+
-/// |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
-/// +----+------+------+----------+----------+----------+
-/// | 2  |  1   |  1   | Variable |    2     | Variable |
-/// +----+------+------+----------+----------+----------+
-
-const UDP_BUFFER_SIZE: usize = 65535;
-const UDP_TIMEOUT_SECS: u64 = 120;
-const UDP_SENDQ_SIZE: usize = 256;
-
-/// Parsed UDP SOCKS5 header
-#[derive(Debug, Clone)]
-pub struct UdpHeader {
-    pub frag: u8,
-    pub target_addr: TargetAddr,
-}
-
-/// UDP port mapping for tracking client sessions
-type UdpPortMap = Arc<RwLock<HashMap<SocketAddr, mpsc::Sender<Bytes>>>>;
-
-/// Handle UDP ASSOCIATE command on the tunnel stream
-///
-/// This creates a virtual UDP relay that:
-/// 1. Uses a separate data channel for UDP traffic
-/// 2. Encapsulates UDP datagrams through the tunnel
-/// 3. Maintains session state for bidirectional communication
-pub async fn handle_udp_associate<S, T>(
-    mut control_stream: S,
-    config: &SocksConfig,
-    channel_pool: Arc<ChannelPool<T>>,
-    client_indicated_addr: TargetAddr,
-) -> Result<()>
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send,
-    T: crate::transport::Transport,
-{
-    // Acquire a dedicated data channel for UDP traffic from the pool
-    let udp_channel = channel_pool
-        .acquire_udp_channel()
-        .await
-        .context("Failed to acquire UDP data channel")?;
-
-    // Create the UDP relay state
-    let port_map: UdpPortMap = Arc::new(RwLock::new(HashMap::new()));
-
-    // Channel for outbound UDP traffic (client -> target)
-    let (outbound_tx, mut outbound_rx) = mpsc::channel::<UdpTraffic>(UDP_SENDQ_SIZE);
-
-    // Send success reply with a virtual bind address
-    // In reverse tunnel mode, we use a placeholder since there's no real local binding
-    let virtual_bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-    send_udp_reply(&mut control_stream, SOCKS5_REPLY_SUCCEEDED, virtual_bind_addr).await?;
-
-    info!("UDP ASSOCIATE session started");
-
-    // Split the UDP data channel
-    let (mut udp_read, mut udp_write) = tokio::io::split(udp_channel);
-
-    // Task: Forward outbound UDP traffic through the tunnel
-    let outbound_task = tokio::spawn(async move {
-        while let Some(traffic) = outbound_rx.recv().await {
-            if let Err(e) = write_udp_traffic(&mut udp_write, &traffic).await {
-                debug!("Outbound UDP write error: {:?}", e);
-                break;
-            }
-        }
-    });
-
-    // Task: Process inbound UDP traffic from the tunnel
-    let port_map_clone = port_map.clone();
-    let outbound_tx_clone = outbound_tx.clone();
-    let inbound_task = tokio::spawn(async move {
-        let mut buf = BytesMut::with_capacity(UDP_BUFFER_SIZE);
-
-        loop {
-            match read_udp_traffic(&mut udp_read, &mut buf).await {
-                Ok(traffic) => {
-                    if let Err(e) = handle_inbound_udp(
-                        traffic,
-                        &port_map_clone,
-                        outbound_tx_clone.clone(),
-                    ).await {
-                        debug!("Inbound UDP handling error: {:?}", e);
-                    }
-                }
-                Err(e) => {
-                    debug!("Inbound UDP read error: {:?}", e);
-                    break;
-                }
-            }
-        }
-    });
-
-    // Task: Monitor the control stream for termination
-    // When the TCP control connection closes, the UDP association terminates
-    let control_task = tokio::spawn(async move {
-        let mut buf = [0u8; 1];
-        loop {
-            match control_stream.read(&mut buf).await {
-                Ok(0) => {
-                    debug!("Control stream closed, terminating UDP association");
-                    break;
-                }
-                Ok(_) => {
-                    warn!("Unexpected data on UDP control stream");
-                }
-                Err(e) => {
-                    debug!("Control stream error: {:?}", e);
-                    break;
-                }
-            }
-        }
-    });
-
-    // Wait for any task to complete (which terminates the session)
-    tokio::select! {
-        _ = outbound_task => debug!("Outbound task completed"),
-        _ = inbound_task => debug!("Inbound task completed"),
-        _ = control_task => debug!("Control task completed"),
-    }
-
-    info!("UDP ASSOCIATE session ended");
-    Ok(())
-}
-
-/// UDP traffic structure for tunnel encapsulation
-#[derive(Debug)]
-pub struct UdpTraffic {
-    pub from: SocketAddr,
-    pub target: TargetAddr,
-    pub data: Bytes,
-}
-
-/// Write UDP traffic to the tunnel (with framing)
-async fn write_udp_traffic<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    traffic: &UdpTraffic,
-) -> Result<()> {
-    // Frame format:
-    // [2 bytes: total length][header][data]
-    let header = encode_udp_header(&traffic.target)?;
-    let total_len = (header.len() + traffic.data.len()) as u16;
-
-    writer.write_all(&total_len.to_be_bytes()).await?;
-    writer.write_all(&header).await?;
-    writer.write_all(&traffic.data).await?;
-    writer.flush().await?;
-
-    Ok(())
-}
-
-/// Read UDP traffic from the tunnel (with framing)
-async fn read_udp_traffic<R: AsyncRead + Unpin>(
-    reader: &mut R,
-    buf: &mut BytesMut,
-) -> Result<UdpTraffic> {
-    // Read frame length
-    let mut len_buf = [0u8; 2];
-    reader.read_exact(&mut len_buf).await?;
-    let total_len = u16::from_be_bytes(len_buf) as usize;
-
-    // Read frame data
-    buf.resize(total_len, 0);
-    reader.read_exact(buf).await?;
-
-    // Parse header and extract data
-    let (header, data) = parse_udp_frame(buf)?;
-
-    Ok(UdpTraffic {
-        from: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0), // Set by context
-        target: header.target_addr,
-        data: Bytes::copy_from_slice(data),
-    })
-}
-
-/// Handle inbound UDP packet from tunnel
-async fn handle_inbound_udp(
-    traffic: UdpTraffic,
-    port_map: &UdpPortMap,
-    outbound_tx: mpsc::Sender<UdpTraffic>,
-) -> Result<()> {
-    // Resolve target address
-    let target_addr = traffic.target.resolve().await?;
-
-    // Check if we have an existing forwarder for this target
-    let map = port_map.read().await;
-
-    if let Some(tx) = map.get(&target_addr) {
-        // Forward to existing session
-        let _ = tx.send(traffic.data).await;
+fn determine_service_handler(&self) -> ServiceHandler {
+    // If service name contains "ssh", use SSH handler
+    // Otherwise, use SOCKS5 handler
+    if self.config.service_name.to_lowercase().contains("ssh") {
+        ServiceHandler::Ssh(Arc::new(self.config.ssh.clone().unwrap_or_default()))
     } else {
-        // Drop read lock and create new forwarder
-        drop(map);
-
-        // Create UDP socket for this target
-        let socket = UdpSocket::bind("0.0.0.0:0").await?;
-        socket.connect(target_addr).await?;
-
-        // Create channel for this session
-        let (session_tx, session_rx) = mpsc::channel(UDP_SENDQ_SIZE);
-
-        // Register in port map
-        let mut map = port_map.write().await;
-        map.insert(target_addr, session_tx.clone());
-        drop(map);
-
-        // Spawn forwarder task
-        let port_map_clone = port_map.clone();
-        tokio::spawn(run_udp_forwarder(
-            socket,
-            session_rx,
-            outbound_tx,
-            target_addr,
-            port_map_clone,
-        ));
-
-        // Send initial packet
-        let _ = session_tx.send(traffic.data).await;
-    }
-
-    Ok(())
-}
-
-/// Run a UDP forwarder for a specific target
-async fn run_udp_forwarder(
-    socket: UdpSocket,
-    mut inbound_rx: mpsc::Receiver<Bytes>,
-    outbound_tx: mpsc::Sender<UdpTraffic>,
-    target: SocketAddr,
-    port_map: UdpPortMap,
-) -> Result<()> {
-    let mut buf = vec![0u8; UDP_BUFFER_SIZE];
-
-    loop {
-        tokio::select! {
-            // Receive data to send to target
-            Some(data) = inbound_rx.recv() => {
-                if let Err(e) = socket.send(&data).await {
-                    debug!("UDP send error: {:?}", e);
-                    break;
-                }
-            }
-
-            // Receive response from target
-            result = socket.recv(&mut buf) => {
-                match result {
-                    Ok(len) => {
-                        let traffic = UdpTraffic {
-                            from: target,
-                            target: TargetAddr::Ip(target),
-                            data: Bytes::copy_from_slice(&buf[..len]),
-                        };
-
-                        if outbound_tx.send(traffic).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        debug!("UDP recv error: {:?}", e);
-                        break;
-                    }
-                }
-            }
-
-            // Timeout - clean up idle sessions
-            _ = tokio::time::sleep(Duration::from_secs(UDP_TIMEOUT_SECS)) => {
-                debug!("UDP session timeout for {}", target);
-                break;
-            }
-        }
-    }
-
-    // Clean up port map entry
-    let mut map = port_map.write().await;
-    map.remove(&target);
-
-    debug!("UDP forwarder for {} terminated", target);
-    Ok(())
-}
-
-/// Encode target address into SOCKS5 UDP header format
-fn encode_udp_header(target: &TargetAddr) -> Result<Vec<u8>> {
-    let mut header = vec![0u8, 0u8, 0u8]; // RSV (2 bytes) + FRAG (1 byte)
-
-    match target {
-        TargetAddr::Ip(SocketAddr::V4(addr)) => {
-            header.push(SOCKS5_ADDR_TYPE_IPV4);
-            header.extend_from_slice(&addr.ip().octets());
-            header.extend_from_slice(&addr.port().to_be_bytes());
-        }
-        TargetAddr::Ip(SocketAddr::V6(addr)) => {
-            header.push(SOCKS5_ADDR_TYPE_IPV6);
-            header.extend_from_slice(&addr.ip().octets());
-            header.extend_from_slice(&addr.port().to_be_bytes());
-        }
-        TargetAddr::Domain(domain, port) => {
-            header.push(SOCKS5_ADDR_TYPE_DOMAIN);
-            header.push(domain.len() as u8);
-            header.extend_from_slice(domain.as_bytes());
-            header.extend_from_slice(&port.to_be_bytes());
-        }
-    }
-
-    Ok(header)
-}
-
-/// Parse SOCKS5 UDP frame and extract header + data
-fn parse_udp_frame(buf: &[u8]) -> Result<(UdpHeader, &[u8])> {
-    if buf.len() < 4 {
-        anyhow::bail!("UDP frame too short");
-    }
-
-    let frag = buf[2];
-    let atyp = buf[3];
-
-    let (target_addr, header_len) = match atyp {
-        SOCKS5_ADDR_TYPE_IPV4 => {
-            if buf.len() < 10 {
-                anyhow::bail!("IPv4 UDP frame too short");
-            }
-            let ip = Ipv4Addr::new(buf[4], buf[5], buf[6], buf[7]);
-            let port = u16::from_be_bytes([buf[8], buf[9]]);
-            (TargetAddr::Ip(SocketAddr::new(IpAddr::V4(ip), port)), 10)
-        }
-        SOCKS5_ADDR_TYPE_IPV6 => {
-            if buf.len() < 22 {
-                anyhow::bail!("IPv6 UDP frame too short");
-            }
-            let mut ip_bytes = [0u8; 16];
-            ip_bytes.copy_from_slice(&buf[4..20]);
-            let ip = std::net::Ipv6Addr::from(ip_bytes);
-            let port = u16::from_be_bytes([buf[20], buf[21]]);
-            (TargetAddr::Ip(SocketAddr::new(IpAddr::V6(ip), port)), 22)
-        }
-        SOCKS5_ADDR_TYPE_DOMAIN => {
-            let domain_len = buf[4] as usize;
-            if buf.len() < 5 + domain_len + 2 {
-                anyhow::bail!("Domain UDP frame too short");
-            }
-            let domain = String::from_utf8(buf[5..5 + domain_len].to_vec())?;
-            let port = u16::from_be_bytes([buf[5 + domain_len], buf[6 + domain_len]]);
-            (TargetAddr::Domain(domain, port), 7 + domain_len)
-        }
-        _ => anyhow::bail!("Unknown address type: {}", atyp),
-    };
-
-    Ok((UdpHeader { frag, target_addr }, &buf[header_len..]))
-}
-
-/// Send UDP ASSOCIATE reply
-async fn send_udp_reply<S: AsyncWrite + Unpin>(
-    stream: &mut S,
-    reply_code: u8,
-    bind_addr: SocketAddr,
-) -> Result<()> {
-    let mut reply = vec![
-        SOCKS5_VERSION,
-        reply_code,
-        0x00, // Reserved
-    ];
-
-    match bind_addr {
-        SocketAddr::V4(addr) => {
-            reply.push(SOCKS5_ADDR_TYPE_IPV4);
-            reply.extend_from_slice(&addr.ip().octets());
-            reply.extend_from_slice(&addr.port().to_be_bytes());
-        }
-        SocketAddr::V6(addr) => {
-            reply.push(SOCKS5_ADDR_TYPE_IPV6);
-            reply.extend_from_slice(&addr.ip().octets());
-            reply.extend_from_slice(&addr.port().to_be_bytes());
-        }
-    }
-
-    stream.write_all(&reply).await?;
-    stream.flush().await?;
-
-    Ok(())
-}
-
-// SOCKS5 constants
-const SOCKS5_VERSION: u8 = 0x05;
-const SOCKS5_ADDR_TYPE_IPV4: u8 = 0x01;
-const SOCKS5_ADDR_TYPE_DOMAIN: u8 = 0x03;
-const SOCKS5_ADDR_TYPE_IPV6: u8 = 0x04;
-const SOCKS5_REPLY_SUCCEEDED: u8 = 0x00;
-```
-
----
-
-## Connection Pooling Implementation
-
-Connection pooling is a mandatory feature that pre-establishes data channel connections to reduce latency and improve throughput.
-
-### Connection Pool Architecture
-
-```
-┌────────────────────────────────────────────────────────────────────────────────┐
-│                           CONNECTION POOL ARCHITECTURE                         │
-│                                                                                │
-│  ┌────────────────────────────────────────────────────────────────────────┐    │
-│  │                         ChannelPool<T: Transport>                      │    │
-│  │                                                                        │    │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐         │    │
-│  │  │  TCP Channels   │  │  UDP Channels   │  │ Pending Creates │         │    │
-│  │  │  (VecDeque)     │  │  (VecDeque)     │  │  (Semaphore)    │         │    │
-│  │  │                 │  │                 │  │                 │         │    │
-│  │  │  [Channel 1]    │  │  [Channel A]    │  │  permits: N     │         │    │
-│  │  │  [Channel 2]    │  │  [Channel B]    │  │                 │         │    │
-│  │  │  [Channel 3]    │  │  [Channel C]    │  │                 │         │    │
-│  │  │  ...            │  │  ...            │  │                 │         │    │
-│  │  └────────┬────────┘  └────────┬────────┘  └─────────────────┘         │    │
-│  │           │                    │                                       │    │
-│  │           ▼                    ▼                                       │    │
-│  │  ┌─────────────────────────────────────────────────────────────┐       │    │
-│  │  │                    Pool Manager Task                         │      │    │
-│  │  │                                                              │      │    │
-│  │  │  • Monitors pool size                                        │      │    │
-│  │  │  • Pre-creates channels when below min_size                  │      │    │
-│  │  │  • Validates channel health                                  │      │    │
-│  │  │  • Removes stale connections                                 │      │    │
-│  │  │  • Respects max_size limit                                   │      │    │
-│  │  └──────────────────────────────────────────────────────────────┘      │    │
-│  └────────────────────────────────────────────────────────────────────────┘    │
-│                                                                                │
-│  Usage Flow:                                                                   │
-│  ┌──────────┐    acquire()    ┌──────────┐    use channel    ┌──────────┐      │
-│  │  Client  │ ───────────────►│   Pool   │ ────────────────► │  SOCKS5  │      │
-│  │  Request │                 │          │                   │  Handler │      │
-│  └──────────┘                 └──────────┘                   └──────────┘      │
-│                                    ▲                              │            │
-│                                    │         release()            │            │
-│                                    └──────────────────────────────┘            │
-│                                                                                │
-└────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Pool Configuration
-
-```rust
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PoolConfig {
-    /// Minimum number of pre-established TCP channels
-    #[serde(default = "default_min_tcp_channels")]
-    pub min_tcp_channels: usize,
-
-    /// Maximum number of TCP channels
-    #[serde(default = "default_max_tcp_channels")]
-    pub max_tcp_channels: usize,
-
-    /// Minimum number of pre-established UDP channels
-    #[serde(default = "default_min_udp_channels")]
-    pub min_udp_channels: usize,
-
-    /// Maximum number of UDP channels
-    #[serde(default = "default_max_udp_channels")]
-    pub max_udp_channels: usize,
-
-    /// Channel idle timeout in seconds
-    #[serde(default = "default_idle_timeout")]
-    pub idle_timeout: u64,
-
-    /// Health check interval in seconds
-    #[serde(default = "default_health_check_interval")]
-    pub health_check_interval: u64,
-
-    /// Maximum time to wait for a channel from the pool
-    #[serde(default = "default_acquire_timeout")]
-    pub acquire_timeout: u64,
-}
-
-fn default_min_tcp_channels() -> usize { 2 }
-fn default_max_tcp_channels() -> usize { 10 }
-fn default_min_udp_channels() -> usize { 1 }
-fn default_max_udp_channels() -> usize { 5 }
-fn default_idle_timeout() -> u64 { 300 }
-fn default_health_check_interval() -> u64 { 30 }
-fn default_acquire_timeout() -> u64 { 10 }
-```
-
-### Channel Pool Implementation (`src/pool/channel_pool.rs`)
-
-```rust
-use crate::config::PoolConfig;
-use crate::protocol::*;
-use crate::transport::{AddrMaybeCached, SocketOpts, Transport};
-use anyhow::{Context, Result};
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{Mutex, Notify, Semaphore};
-use tracing::{debug, error, info, warn};
-
-/// A pooled channel with metadata
-struct PooledChannel<S> {
-    stream: S,
-    created_at: Instant,
-    last_used: Instant,
-}
-
-impl<S> PooledChannel<S> {
-    fn new(stream: S) -> Self {
-        let now = Instant::now();
-        PooledChannel {
-            stream,
-            created_at: now,
-            last_used: now,
-        }
-    }
-
-    fn is_stale(&self, idle_timeout: Duration) -> bool {
-        self.last_used.elapsed() > idle_timeout
-    }
-}
-
-/// Connection pool for data channels
-pub struct ChannelPool<T: Transport> {
-    config: PoolConfig,
-    transport: Arc<T>,
-    remote_addr: AddrMaybeCached,
-    session_key: Digest,
-
-    /// Available TCP channels
-    tcp_channels: Mutex<VecDeque<PooledChannel<T::Stream>>>,
-
-    /// Available UDP channels
-    udp_channels: Mutex<VecDeque<PooledChannel<T::Stream>>>,
-
-    /// Semaphore to limit concurrent channel creation
-    create_semaphore: Semaphore,
-
-    /// Notify when channels become available
-    channel_available: Notify,
-
-    /// Current number of active TCP channels (in use + pooled)
-    active_tcp_count: AtomicUsize,
-
-    /// Current number of active UDP channels (in use + pooled)
-    active_udp_count: AtomicUsize,
-
-    /// Shutdown signal
-    shutdown: Notify,
-}
-
-impl<T: Transport + 'static> ChannelPool<T> {
-    /// Create a new channel pool
-    pub async fn new(
-        config: PoolConfig,
-        transport: Arc<T>,
-        remote_addr: AddrMaybeCached,
-        session_key: Digest,
-    ) -> Result<Arc<Self>> {
-        let pool = Arc::new(ChannelPool {
-            config: config.clone(),
-            transport,
-            remote_addr,
-            session_key,
-            tcp_channels: Mutex::new(VecDeque::new()),
-            udp_channels: Mutex::new(VecDeque::new()),
-            create_semaphore: Semaphore::new(config.max_tcp_channels + config.max_udp_channels),
-            channel_available: Notify::new(),
-            active_tcp_count: AtomicUsize::new(0),
-            active_udp_count: AtomicUsize::new(0),
-            shutdown: Notify::new(),
-        });
-
-        // Pre-populate the pool
-        pool.clone().warm_up().await?;
-
-        // Start the pool manager task
-        let pool_clone = pool.clone();
-        tokio::spawn(async move {
-            pool_clone.run_manager().await;
-        });
-
-        Ok(pool)
-    }
-
-    /// Pre-populate the pool with minimum channels
-    async fn warm_up(self: Arc<Self>) -> Result<()> {
-        info!(
-            "Warming up connection pool: {} TCP, {} UDP channels",
-            self.config.min_tcp_channels,
-            self.config.min_udp_channels
-        );
-
-        // Create minimum TCP channels
-        let mut tasks = Vec::new();
-        for _ in 0..self.config.min_tcp_channels {
-            let pool = self.clone();
-            tasks.push(tokio::spawn(async move {
-                if let Err(e) = pool.create_tcp_channel().await {
-                    warn!("Failed to pre-create TCP channel: {:?}", e);
-                }
-            }));
-        }
-
-        // Create minimum UDP channels
-        for _ in 0..self.config.min_udp_channels {
-            let pool = self.clone();
-            tasks.push(tokio::spawn(async move {
-                if let Err(e) = pool.create_udp_channel().await {
-                    warn!("Failed to pre-create UDP channel: {:?}", e);
-                }
-            }));
-        }
-
-        // Wait for all warmup tasks
-        for task in tasks {
-            let _ = task.await;
-        }
-
-        info!("Connection pool warmed up successfully");
-        Ok(())
-    }
-
-    /// Create a new TCP data channel and add to pool
-    async fn create_tcp_channel(&self) -> Result<()> {
-        let _permit = self.create_semaphore.acquire().await?;
-
-        if self.active_tcp_count.load(Ordering::Relaxed) >= self.config.max_tcp_channels {
-            return Ok(()); // At capacity
-        }
-
-        let stream = self.establish_data_channel(DataChannelCmd::StartForwardTcp).await?;
-
-        let mut channels = self.tcp_channels.lock().await;
-        channels.push_back(PooledChannel::new(stream));
-        self.active_tcp_count.fetch_add(1, Ordering::Relaxed);
-
-        self.channel_available.notify_one();
-        debug!("Created new TCP channel, pool size: {}", channels.len());
-
-        Ok(())
-    }
-
-    /// Create a new UDP data channel and add to pool
-    async fn create_udp_channel(&self) -> Result<()> {
-        let _permit = self.create_semaphore.acquire().await?;
-
-        if self.active_udp_count.load(Ordering::Relaxed) >= self.config.max_udp_channels {
-            return Ok(()); // At capacity
-        }
-
-        let stream = self.establish_data_channel(DataChannelCmd::StartForwardUdp).await?;
-
-        let mut channels = self.udp_channels.lock().await;
-        channels.push_back(PooledChannel::new(stream));
-        self.active_udp_count.fetch_add(1, Ordering::Relaxed);
-
-        self.channel_available.notify_one();
-        debug!("Created new UDP channel, pool size: {}", channels.len());
-
-        Ok(())
-    }
-
-    /// Establish a data channel with the server
-    async fn establish_data_channel(&self, cmd: DataChannelCmd) -> Result<T::Stream> {
-        let mut conn = self.transport
-            .connect(&self.remote_addr)
-            .await
-            .context("Failed to connect to server")?;
-
-        // Send data channel hello
-        let hello = Hello::DataChannelHello(CURRENT_PROTO_VERSION, self.session_key);
-        conn.write_all(&bincode::serialize(&hello)?).await?;
-        conn.flush().await?;
-
-        // Wait for command acknowledgment
-        let received_cmd = read_data_cmd(&mut conn).await?;
-
-        // Verify we got the expected command type
-        match (&cmd, &received_cmd) {
-            (DataChannelCmd::StartForwardTcp, DataChannelCmd::StartForwardTcp) => {}
-            (DataChannelCmd::StartForwardUdp, DataChannelCmd::StartForwardUdp) => {}
-            _ => anyhow::bail!("Unexpected data channel command: {:?}", received_cmd),
-        }
-
-        Ok(conn)
-    }
-
-    /// Acquire a TCP channel from the pool
-    pub async fn acquire_tcp_channel(&self) -> Result<PooledChannelGuard<T::Stream>> {
-        let timeout_duration = Duration::from_secs(self.config.acquire_timeout);
-
-        let deadline = Instant::now() + timeout_duration;
-
-        loop {
-            // Try to get a channel from the pool
-            {
-                let mut channels = self.tcp_channels.lock().await;
-
-                // Remove stale channels
-                let idle_timeout = Duration::from_secs(self.config.idle_timeout);
-                while let Some(front) = channels.front() {
-                    if front.is_stale(idle_timeout) {
-                        channels.pop_front();
-                        self.active_tcp_count.fetch_sub(1, Ordering::Relaxed);
-                        debug!("Removed stale TCP channel");
-                    } else {
-                        break;
-                    }
-                }
-
-                if let Some(mut channel) = channels.pop_front() {
-                    channel.last_used = Instant::now();
-                    return Ok(PooledChannelGuard {
-                        stream: Some(channel.stream),
-                        pool: self,
-                        is_tcp: true,
-                    });
-                }
-            }
-
-            // No channel available, try to create one
-            if self.active_tcp_count.load(Ordering::Relaxed) < self.config.max_tcp_channels {
-                if let Err(e) = self.create_tcp_channel().await {
-                    warn!("Failed to create TCP channel on demand: {:?}", e);
-                }
-                continue; // Try again
-            }
-
-            // At capacity, wait for a channel to become available
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                anyhow::bail!("Timeout waiting for TCP channel");
-            }
-
-            tokio::select! {
-                _ = self.channel_available.notified() => continue,
-                _ = tokio::time::sleep(remaining) => {
-                    anyhow::bail!("Timeout waiting for TCP channel");
-                }
-            }
-        }
-    }
-
-    /// Acquire a UDP channel from the pool
-    pub async fn acquire_udp_channel(&self) -> Result<PooledChannelGuard<T::Stream>> {
-        let timeout_duration = Duration::from_secs(self.config.acquire_timeout);
-        let deadline = Instant::now() + timeout_duration;
-
-        loop {
-            {
-                let mut channels = self.udp_channels.lock().await;
-
-                // Remove stale channels
-                let idle_timeout = Duration::from_secs(self.config.idle_timeout);
-                while let Some(front) = channels.front() {
-                    if front.is_stale(idle_timeout) {
-                        channels.pop_front();
-                        self.active_udp_count.fetch_sub(1, Ordering::Relaxed);
-                        debug!("Removed stale UDP channel");
-                    } else {
-                        break;
-                    }
-                }
-
-                if let Some(mut channel) = channels.pop_front() {
-                    channel.last_used = Instant::now();
-                    return Ok(PooledChannelGuard {
-                        stream: Some(channel.stream),
-                        pool: self,
-                        is_tcp: false,
-                    });
-                }
-            }
-
-            if self.active_udp_count.load(Ordering::Relaxed) < self.config.max_udp_channels {
-                if let Err(e) = self.create_udp_channel().await {
-                    warn!("Failed to create UDP channel on demand: {:?}", e);
-                }
-                continue;
-            }
-
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                anyhow::bail!("Timeout waiting for UDP channel");
-            }
-
-            tokio::select! {
-                _ = self.channel_available.notified() => continue,
-                _ = tokio::time::sleep(remaining) => {
-                    anyhow::bail!("Timeout waiting for UDP channel");
-                }
-            }
-        }
-    }
-
-    /// Return a channel to the pool (called by PooledChannelGuard on drop)
-    fn return_channel(&self, stream: T::Stream, is_tcp: bool) {
-        let pool = self.clone();
-        tokio::spawn(async move {
-            if is_tcp {
-                let mut channels = pool.tcp_channels.lock().await;
-                if channels.len() < pool.config.max_tcp_channels {
-                    channels.push_back(PooledChannel::new(stream));
-                    pool.channel_available.notify_one();
-                } else {
-                    pool.active_tcp_count.fetch_sub(1, Ordering::Relaxed);
-                }
-            } else {
-                let mut channels = pool.udp_channels.lock().await;
-                if channels.len() < pool.config.max_udp_channels {
-                    channels.push_back(PooledChannel::new(stream));
-                    pool.channel_available.notify_one();
-                } else {
-                    pool.active_udp_count.fetch_sub(1, Ordering::Relaxed);
-                }
-            }
-        });
-    }
-
-    /// Run the pool manager (background task)
-    async fn run_manager(self: Arc<Self>) {
-        let health_interval = Duration::from_secs(self.config.health_check_interval);
-
-        loop {
-            tokio::select! {
-                _ = self.shutdown.notified() => {
-                    info!("Pool manager shutting down");
-                    break;
-                }
-                _ = tokio::time::sleep(health_interval) => {
-                    self.maintain_pool().await;
-                }
-            }
-        }
-    }
-
-    /// Maintain pool health and size
-    async fn maintain_pool(&self) {
-        // Ensure minimum TCP channels
-        let tcp_count = {
-            let channels = self.tcp_channels.lock().await;
-            channels.len()
-        };
-
-        if tcp_count < self.config.min_tcp_channels {
-            let needed = self.config.min_tcp_channels - tcp_count;
-            for _ in 0..needed {
-                if let Err(e) = self.create_tcp_channel().await {
-                    warn!("Failed to replenish TCP channel: {:?}", e);
-                }
-            }
-        }
-
-        // Ensure minimum UDP channels
-        let udp_count = {
-            let channels = self.udp_channels.lock().await;
-            channels.len()
-        };
-
-        if udp_count < self.config.min_udp_channels {
-            let needed = self.config.min_udp_channels - udp_count;
-            for _ in 0..needed {
-                if let Err(e) = self.create_udp_channel().await {
-                    warn!("Failed to replenish UDP channel: {:?}", e);
-                }
-            }
-        }
-
-        debug!(
-            "Pool health check: TCP={}/{}, UDP={}/{}",
-            tcp_count, self.config.min_tcp_channels,
-            udp_count, self.config.min_udp_channels
-        );
-    }
-
-    /// Shutdown the pool
-    pub fn shutdown(&self) {
-        self.shutdown.notify_one();
-    }
-}
-
-/// RAII guard that returns the channel to the pool on drop
-pub struct PooledChannelGuard<'a, S> {
-    stream: Option<S>,
-    pool: &'a ChannelPool<dyn Transport<Stream = S>>,
-    is_tcp: bool,
-}
-
-impl<'a, S> PooledChannelGuard<'a, S> {
-    /// Take ownership of the stream (won't return to pool)
-    pub fn take(mut self) -> S {
-        self.stream.take().unwrap()
-    }
-
-    /// Get a mutable reference to the stream
-    pub fn stream_mut(&mut self) -> &mut S {
-        self.stream.as_mut().unwrap()
-    }
-}
-
-impl<'a, S> Drop for PooledChannelGuard<'a, S> {
-    fn drop(&mut self) {
-        if let Some(stream) = self.stream.take() {
-            // Return stream to pool
-            // Note: In actual implementation, we'd need to handle this differently
-            // since we can't call async from drop. Using a channel or spawning works.
-        }
-    }
-}
-
-impl<'a, S> std::ops::Deref for PooledChannelGuard<'a, S> {
-    type Target = S;
-
-    fn deref(&self) -> &Self::Target {
-        self.stream.as_ref().unwrap()
-    }
-}
-
-impl<'a, S> std::ops::DerefMut for PooledChannelGuard<'a, S> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.stream.as_mut().unwrap()
+        ServiceHandler::Socks5(self.config.socks.clone())
     }
 }
 ```
-
-### Updated Client with Connection Pool (`src/client.rs` changes)
-
-```rust
-// In the ControlChannel implementation, integrate the pool:
-
-impl<T: 'static + Transport> ControlChannel<T> {
-    async fn run_once(&self) -> Result<()> {
-        let mut remote_addr = AddrMaybeCached::new(&self.config.remote_addr);
-        remote_addr.resolve().await?;
-
-        let mut conn = self.transport.connect(&remote_addr).await?;
-        T::hint(&conn, SocketOpts::for_control_channel());
-
-        // Perform handshake
-        let session_key = self.do_handshake(&mut conn).await?;
-
-        info!("Control channel established");
-
-        // Initialize connection pool
-        let pool = ChannelPool::new(
-            self.config.pool.clone(),
-            self.transport.clone(),
-            remote_addr.clone(),
-            session_key,
-        ).await?;
-
-        info!("Connection pool initialized");
-
-        // Listen for commands
-        loop {
-            tokio::select! {
-                cmd = read_control_cmd(&mut conn) => {
-                    match cmd? {
-                        ControlChannelCmd::CreateDataChannel => {
-                            // Use pooled channel instead of creating new one
-                            let pool_clone = pool.clone();
-                            let socks_config = self.config.socks.clone();
-
-                            tokio::spawn(async move {
-                                if let Err(e) = handle_pooled_request(pool_clone, socks_config).await {
-                                    warn!("Request handling error: {:?}", e);
-                                }
-                            });
-                        }
-                        ControlChannelCmd::HeartBeat => {
-                            debug!("Heartbeat received");
-                        }
-                    }
-                }
-                _ = tokio::time::sleep(Duration::from_secs(self.config.heartbeat_timeout)) => {
-                    pool.shutdown();
-                    bail!("Heartbeat timeout");
-                }
-            }
-        }
-    }
-}
-
-async fn handle_pooled_request<T: Transport>(
-    pool: Arc<ChannelPool<T>>,
-    socks_config: SocksConfig,
-) -> Result<()> {
-    // Acquire a channel from the pool
-    let mut channel = pool.acquire_tcp_channel().await?;
-
-    // Process SOCKS5 on the pooled channel
-    // Note: We take ownership since SOCKS5 handling is a long-lived operation
-    let stream = channel.take();
-
-    handle_socks5_on_stream(stream, &socks_config).await
-}
-```
-
----
 
 ## Security Considerations
 
 ### General Security
-1. **Token Authentication**: The rathole protocol requires a shared token for client authentication
-2. **Transport Encryption**: Use TLS or Noise transport for encrypted tunnel
-3. **No Local Binding**: Services never bind locally, reducing attack surface
-4. **Service Isolation**: Each service (SOCKS5, SSH) runs independently
+
+- All transport options (TLS, Noise) provide encrypted communication
+- Token-based authentication with nonce prevents replay attacks
+- SHA-256 digest for service name and authentication
+- Release builds strip symbols and use LTO
 
 ### SOCKS5 Security
-5. **SOCKS5 Authentication**: Optional username/password auth for SOCKS5 layer
-6. **Command Restrictions**: Optionally disable UDP ASSOCIATE or BIND commands
-7. **DNS Privacy**: DNS resolution can be performed on client side
+
+- Optional username/password authentication (RFC 1929)
+- DNS resolution can be configured client-side or passed through
+- Connection timeouts prevent resource exhaustion
 
 ### SSH Security
-8. **Host Key Management**: Generate and securely store host keys
-9. **Public Key Authentication**: Preferred over password authentication
-10. **Password Hashing**: Passwords should be hashed (argon2) in production configs
-11. **Max Auth Attempts**: Configurable limit to prevent brute force
-12. **User Isolation**: Per-user home directories and shell configuration
-13. **Subsystem Control**: Optionally disable shell, exec, or SFTP
-14. **Session Auditing**: Log all SSH authentication and command execution
 
----
+- Password verification uses constant-time comparison (prevents timing attacks)
+- Supports Ed25519 and RSA host keys
+- Public key authentication via authorized_keys (OpenSSH format)
+- Configurable max authentication attempts (default: 6)
+- Connection timeout (default: 300s)
+- Per-feature toggles: shell, exec, PTY, SFTP, TCP forwarding
+- Ephemeral host key generation when no key file is configured
 
-## Testing Strategy
+## Testing
 
 ### Unit Tests
-1. **SOCKS5 Protocol**: Test SOCKS5 parsing, auth, and command handling
-2. **SSH Protocol**: Test SSH auth verification, key parsing
-3. **Configuration**: Test config loading and validation
-4. **Pool Logic**: Test connection pool management
 
-### Integration Tests
-5. **Full SOCKS5 Flow**: Test with mock rathole server
-6. **Full SSH Flow**: Test SSH session lifecycle
-7. **Multi-Service**: Test SOCKS5 and SSH running simultaneously
-
-### Manual Testing
+Every module includes `#[cfg(test)] mod tests` with comprehensive coverage:
 
 ```bash
-# Start rathole server (with server config)
-rathole server.toml
-
-# Start Sockrats client
-sockrats -c client.toml
-
-# =====================
-# Test SOCKS5 Service
-# =====================
-
-# Test SOCKS5 proxy (from server side)
-curl -x socks5://localhost:1080 https://example.com
-
-# Test with authentication
-curl -x socks5://user:pass@localhost:1080 https://example.com
-
-# Test UDP (DNS query through SOCKS5)
-dig @8.8.8.8 example.com +tcp  # via TCP
-# For UDP testing, use a SOCKS5-aware DNS tool
-
-# =====================
-# Test SSH Service
-# =====================
-
-# Test SSH connection (from server side, connects to port 2222)
-ssh -p 2222 admin@localhost
-
-# Test with specific key
-ssh -p 2222 -i ~/.ssh/id_rsa admin@localhost
-
-# Test exec command
-ssh -p 2222 admin@localhost "whoami"
-
-# Test SFTP
-sftp -P 2222 admin@localhost
-
-# Test SCP
-scp -P 2222 localfile.txt admin@localhost:/tmp/
+cargo test --all-features --verbose
 ```
 
----
+### Integration Tests
+
+Located in `tests/`:
+- `tests/common/mod.rs` — Test utilities: `create_mock_stream_pair()`, `create_test_listener()`, `create_tcp_stream_pair()`, `TestConfigBuilder`, `socks5_mock` helpers
+- `tests/fixtures/` — Test configuration files for various scenarios
+- `tests/test-integration.sh` — Shell-based integration test script
+
+### Test Fixtures
+
+| File                                     | Purpose                                     |
+|------------------------------------------|---------------------------------------------|
+| `tests/fixtures/test-config.toml`        | Multi-service test (SOCKS5 + SSH)           |
+| `tests/fixtures/test-multi-service.toml` | Multi-service with global socks config      |
+| `tests/fixtures/test-socks5.toml`        | SOCKS5-specific test config                 |
+| `tests/fixtures/test-ssh.toml`           | SSH-specific test config                    |
+| `tests/fixtures/rathole-server.toml`     | Rathole server config for integration tests |
 
 ## Future Enhancements
 
-1. **Metrics**: Prometheus metrics for monitoring (connections, bandwidth, errors)
-2. **Hot Reload**: Configuration hot reload support
-3. **Access Control Lists**: IP-based allow/deny lists for services
-4. **Rate Limiting**: Connection rate limiting per client
-5. **SSH Agent Forwarding**: Support for SSH agent protocol
-6. **SSH Port Forwarding**: Support for -L and -R style forwarding within SSH sessions
-7. **SOCKS5 BIND**: Full BIND command support for incoming connections
+- WebSocket transport implementation (config types already defined)
+- SFTP subsystem support
+- TCP/IP forwarding (direct-tcpip channels)
+- X11 forwarding
+- Agent forwarding
+- UDP pool implementation (`UdpChannelPool`)
+- Per-user SSH settings (authorized commands, forced commands)
+- Metrics and observability endpoints
