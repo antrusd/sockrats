@@ -2,7 +2,7 @@
 //!
 //! Handles the control channel connection to the rathole server.
 
-use super::data_channel::run_data_channel;
+use super::data_channel::{run_data_channel, ServiceHandler};
 use crate::config::ClientConfig;
 use crate::protocol::{
     read_ack, read_control_cmd, read_hello, write_auth, write_hello,
@@ -141,6 +141,10 @@ impl<T: Transport + 'static> ControlChannel<T> {
     ) -> Result<()> {
         let heartbeat_timeout = Duration::from_secs(self.config.heartbeat_timeout);
 
+        // Determine service handler type based on service name and config
+        let service_handler = self.determine_service_handler();
+        info!("Using service handler: {:?}", service_handler);
+
         loop {
             tokio::select! {
                 cmd_result = read_control_cmd(&mut conn) => {
@@ -150,18 +154,18 @@ impl<T: Transport + 'static> ControlChannel<T> {
                         ControlChannelCmd::CreateDataChannel => {
                             debug!("Received CreateDataChannel command");
 
-                            // Spawn data channel handler
+                            // Spawn data channel handler with appropriate service type
                             let transport = self.transport.clone();
                             let addr = remote_addr.clone();
                             let key = session_key;
-                            let socks_config = self.config.socks.clone();
+                            let handler = service_handler.clone();
 
                             tokio::spawn(async move {
                                 if let Err(e) = run_data_channel(
                                     transport,
                                     addr,
                                     key,
-                                    socks_config,
+                                    handler,
                                 ).await {
                                     warn!("Data channel error: {:#}", e);
                                 }
@@ -178,12 +182,26 @@ impl<T: Transport + 'static> ControlChannel<T> {
             }
         }
     }
+
+    /// Determine the service handler type based on configuration
+    fn determine_service_handler(&self) -> ServiceHandler {
+        // Check if the service name suggests SSH
+        let service_name = self.config.service_name.to_lowercase();
+        if service_name.contains("ssh") {
+            info!("Detected SSH service based on service name: {}", self.config.service_name);
+            ServiceHandler::Ssh(Arc::new(self.config.ssh.clone()))
+        } else {
+            // Default to SOCKS5
+            ServiceHandler::Socks5(self.config.socks.clone())
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{SocksConfig, TransportConfig};
+    use crate::ssh::SshConfig;
 
     fn create_test_config() -> ClientConfig {
         ClientConfig {
@@ -193,7 +211,9 @@ mod tests {
             transport: TransportConfig::default(),
             heartbeat_timeout: 40,
             socks: SocksConfig::default(),
+            ssh: SshConfig::default(),
             pool: Default::default(),
+            services: Vec::new(),
         }
     }
 
