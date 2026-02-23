@@ -49,14 +49,18 @@ pub mod error;
 pub mod helper;
 pub mod pool;
 pub mod protocol;
-pub mod socks;
-pub mod ssh;
+pub mod services;
 pub mod transport;
+
+// Backward compatibility re-exports so that `sockrats::socks::*` and
+// `sockrats::ssh::*` continue to work for existing consumers.
+pub use services::socks;
+pub use services::ssh;
 
 // Re-export commonly used items
 pub use client::run_client;
 pub use config::{load_config, Config};
-pub use error::{Socks5Error, SockratsError};
+pub use error::{SockratsError, Socks5Error};
 
 /// Version of the Sockrats library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

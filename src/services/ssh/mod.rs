@@ -1,4 +1,4 @@
-//! SSH server module
+//! SSH server service module
 //!
 //! This module provides an embedded SSH server that processes SSH connections
 //! directly from tunnel streams without binding to a local port.
@@ -33,6 +33,8 @@ pub mod session;
 pub use config::SshConfig;
 pub use handler::SshHandler;
 
+use crate::services::{ServiceHandler, StreamDyn};
+
 #[cfg(feature = "ssh")]
 use anyhow::Result;
 #[cfg(feature = "ssh")]
@@ -42,11 +44,11 @@ use russh::server::Config as RusshConfig;
 #[cfg(feature = "ssh")]
 use russh::MethodKind;
 #[cfg(feature = "ssh")]
-use std::sync::Arc;
-#[cfg(feature = "ssh")]
 use std::time::Duration;
 #[cfg(feature = "ssh")]
 use tokio::io::{AsyncRead, AsyncWrite};
+
+use std::sync::Arc;
 
 /// Handle an SSH connection on a stream
 ///
@@ -144,11 +146,57 @@ fn build_russh_config(config: &SshConfig) -> Result<RusshConfig> {
 
 /// Placeholder for when SSH feature is disabled
 #[cfg(not(feature = "ssh"))]
-pub async fn handle_ssh_on_stream<S>(_stream: S, _config: std::sync::Arc<SshConfig>) -> anyhow::Result<()>
+pub async fn handle_ssh_on_stream<S>(
+    _stream: S,
+    _config: std::sync::Arc<SshConfig>,
+) -> anyhow::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     anyhow::bail!("SSH feature is not enabled. Recompile with --features ssh")
+}
+
+/// SSH service handler implementing the [`ServiceHandler`] trait.
+///
+/// Wraps the existing SSH server implementation to conform to the
+/// service handler interface, allowing it to be registered in the
+/// [`ServiceRegistry`](crate::services::ServiceRegistry).
+#[derive(Debug)]
+pub struct SshServiceHandler {
+    config: Arc<SshConfig>,
+}
+
+impl SshServiceHandler {
+    /// Create a new SSH service handler with the given configuration.
+    pub fn new(config: SshConfig) -> Self {
+        Self {
+            config: Arc::new(config),
+        }
+    }
+
+    /// Get a reference to the SSH configuration.
+    pub fn config(&self) -> &SshConfig {
+        &self.config
+    }
+}
+
+#[async_trait::async_trait]
+impl ServiceHandler for SshServiceHandler {
+    fn service_type(&self) -> &str {
+        "ssh"
+    }
+
+    async fn handle_tcp_stream(&self, stream: Box<dyn StreamDyn>) -> Result<()> {
+        handle_ssh_on_stream(stream, self.config.clone()).await
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.config.enabled {
+            self.config.validate().map_err(|e| anyhow::anyhow!(e))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -167,6 +215,41 @@ mod tests {
         assert!(!config.enabled);
         assert!(config.has_password_auth());
         assert!(config.has_publickey_auth());
+    }
+
+    #[test]
+    fn test_ssh_service_handler_new() {
+        let handler = SshServiceHandler::new(SshConfig::default());
+        assert_eq!(handler.service_type(), "ssh");
+    }
+
+    #[test]
+    fn test_ssh_service_handler_config() {
+        let config = SshConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        let handler = SshServiceHandler::new(config);
+        assert!(handler.config().enabled);
+    }
+
+    #[test]
+    fn test_ssh_service_handler_is_healthy() {
+        let handler = SshServiceHandler::new(SshConfig::default());
+        assert!(handler.is_healthy());
+    }
+
+    #[test]
+    fn test_ssh_service_handler_validate_disabled() {
+        let handler = SshServiceHandler::new(SshConfig::default());
+        assert!(handler.validate().is_ok());
+    }
+
+    #[test]
+    fn test_ssh_service_handler_debug() {
+        let handler = SshServiceHandler::new(SshConfig::default());
+        let debug_str = format!("{:?}", handler);
+        assert!(debug_str.contains("SshServiceHandler"));
     }
 
     #[test]

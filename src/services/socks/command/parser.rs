@@ -2,8 +2,8 @@
 //!
 //! Parses SOCKS5 command requests from the client.
 
-use crate::socks::consts::*;
-use crate::socks::types::{SocksCommand, TargetAddr};
+use crate::services::socks::consts::*;
+use crate::services::socks::types::{SocksCommand, TargetAddr};
 use anyhow::{bail, Context, Result};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -28,13 +28,18 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 /// # Returns
 ///
 /// A tuple of (command, target_address)
-pub async fn parse_command<S>(stream: &mut S, resolve_dns: bool) -> Result<(SocksCommand, TargetAddr)>
+pub async fn parse_command<S>(
+    stream: &mut S,
+    resolve_dns: bool,
+) -> Result<(SocksCommand, TargetAddr)>
 where
     S: AsyncRead + Unpin,
 {
     // Read: VER CMD RSV ATYP
     let mut header = [0u8; 4];
-    stream.read_exact(&mut header).await
+    stream
+        .read_exact(&mut header)
+        .await
         .with_context(|| "Failed to read command header")?;
 
     let version = header[0];
@@ -60,11 +65,7 @@ where
 }
 
 /// Parse the address portion of a SOCKS5 request
-async fn parse_address<S>(
-    stream: &mut S,
-    addr_type: u8,
-    resolve_dns: bool,
-) -> Result<TargetAddr>
+async fn parse_address<S>(stream: &mut S, addr_type: u8, resolve_dns: bool) -> Result<TargetAddr>
 where
     S: AsyncRead + Unpin,
 {
@@ -92,8 +93,8 @@ where
             // Read domain name
             let mut domain_buf = vec![0u8; domain_len];
             stream.read_exact(&mut domain_buf).await?;
-            let domain = String::from_utf8(domain_buf)
-                .with_context(|| "Invalid UTF-8 in domain name")?;
+            let domain =
+                String::from_utf8(domain_buf).with_context(|| "Invalid UTF-8 in domain name")?;
 
             // Read port
             let mut port_buf = [0u8; 2];

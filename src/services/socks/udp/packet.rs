@@ -2,8 +2,8 @@
 //!
 //! Handles the encapsulation format for UDP packets in SOCKS5.
 
-use crate::socks::consts::*;
-use crate::socks::types::TargetAddr;
+use crate::services::socks::consts::*;
+use crate::services::socks::types::TargetAddr;
 use anyhow::{bail, Context, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::net::{Ipv4Addr, Ipv6Addr};

@@ -1,13 +1,16 @@
 //! Control channel management
 //!
 //! Handles the control channel connection to the rathole server.
+//! Each control channel manages one service and spawns data channels
+//! that are routed to the appropriate [`ServiceHandler`].
 
-use super::data_channel::{run_data_channel, ServiceHandler};
+use super::data_channel::run_data_channel;
 use crate::config::ClientConfig;
 use crate::protocol::{
-    read_ack, read_control_cmd, read_hello, write_auth, write_hello,
-    Ack, Auth, ControlChannelCmd, Digest, Hello,
+    read_ack, read_control_cmd, read_hello, write_auth, write_hello, Ack, Auth, ControlChannelCmd,
+    Digest, Hello,
 };
+use crate::services::ServiceHandler;
 use crate::transport::{AddrMaybeCached, SocketOpts, Transport};
 use anyhow::{bail, Context, Result};
 use std::sync::Arc;
@@ -21,12 +24,18 @@ pub struct ControlChannel<T: Transport> {
     config: ClientConfig,
     /// Transport layer
     transport: Arc<T>,
+    /// Service handler for data channels spawned by this control channel
+    handler: Arc<dyn ServiceHandler>,
 }
 
 impl<T: Transport + 'static> ControlChannel<T> {
-    /// Create a new control channel
-    pub fn new(config: ClientConfig, transport: Arc<T>) -> Self {
-        ControlChannel { config, transport }
+    /// Create a new control channel with a specific service handler
+    pub fn new(config: ClientConfig, transport: Arc<T>, handler: Arc<dyn ServiceHandler>) -> Self {
+        ControlChannel {
+            config,
+            transport,
+            handler,
+        }
     }
 
     /// Run the control channel with automatic reconnection
@@ -49,10 +58,8 @@ impl<T: Transport + 'static> ControlChannel<T> {
                         return Err(e);
                     }
 
-                    let delay = std::cmp::min(
-                        base_delay * 2u32.pow((retry_count - 1) as u32),
-                        max_delay,
-                    );
+                    let delay =
+                        std::cmp::min(base_delay * 2u32.pow((retry_count - 1) as u32), max_delay);
 
                     warn!(
                         "Control channel error: {:#}. Reconnecting in {:?}... (attempt {}/{})",
@@ -127,7 +134,12 @@ impl<T: Transport + 'static> ControlChannel<T> {
                 debug!("Authentication successful");
                 Ok(session_key)
             }
-            Ack::ServiceNotExist => bail!("Service '{}' does not exist on server", self.config.service_name),
+            Ack::ServiceNotExist => {
+                bail!(
+                    "Service '{}' does not exist on server",
+                    self.config.service_name
+                )
+            }
             Ack::AuthFailed => bail!("Authentication failed - incorrect token"),
         }
     }
@@ -141,9 +153,11 @@ impl<T: Transport + 'static> ControlChannel<T> {
     ) -> Result<()> {
         let heartbeat_timeout = Duration::from_secs(self.config.heartbeat_timeout);
 
-        // Determine service handler type based on service name and config
-        let service_handler = self.determine_service_handler();
-        info!("Using service handler: {:?}", service_handler);
+        info!(
+            "Using service handler: {} (type: {})",
+            self.config.service_name,
+            self.handler.service_type()
+        );
 
         loop {
             tokio::select! {
@@ -154,11 +168,11 @@ impl<T: Transport + 'static> ControlChannel<T> {
                         ControlChannelCmd::CreateDataChannel => {
                             debug!("Received CreateDataChannel command");
 
-                            // Spawn data channel handler with appropriate service type
+                            // Spawn data channel handler with the service handler
                             let transport = self.transport.clone();
                             let addr = remote_addr.clone();
                             let key = session_key;
-                            let handler = service_handler.clone();
+                            let handler = self.handler.clone();
 
                             tokio::spawn(async move {
                                 if let Err(e) = run_data_channel(
@@ -182,26 +196,14 @@ impl<T: Transport + 'static> ControlChannel<T> {
             }
         }
     }
-
-    /// Determine the service handler type based on configuration
-    fn determine_service_handler(&self) -> ServiceHandler {
-        // Check if the service name suggests SSH
-        let service_name = self.config.service_name.to_lowercase();
-        if service_name.contains("ssh") {
-            info!("Detected SSH service based on service name: {}", self.config.service_name);
-            ServiceHandler::Ssh(Arc::new(self.config.ssh.clone()))
-        } else {
-            // Default to SOCKS5
-            ServiceHandler::Socks5(self.config.socks.clone())
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{SocksConfig, TransportConfig};
-    use crate::ssh::SshConfig;
+    use crate::services::ssh::SshConfig;
+    use crate::services::{Socks5ServiceHandler, SshServiceHandler};
 
     fn create_test_config() -> ClientConfig {
         ClientConfig {
@@ -222,5 +224,17 @@ mod tests {
         let config = create_test_config();
         assert_eq!(config.heartbeat_timeout, 40);
         assert_eq!(config.service_name, "test");
+    }
+
+    #[test]
+    fn test_control_channel_socks5_handler() {
+        let handler = Socks5ServiceHandler::new(SocksConfig::default());
+        assert_eq!(handler.service_type(), "socks5");
+    }
+
+    #[test]
+    fn test_control_channel_ssh_handler() {
+        let handler = SshServiceHandler::new(SshConfig::default());
+        assert_eq!(handler.service_type(), "ssh");
     }
 }

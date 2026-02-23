@@ -224,13 +224,22 @@ mod tests {
     #[test]
     fn test_socks5_reply_code_from_io_error() {
         let err = io::Error::new(io::ErrorKind::ConnectionRefused, "refused");
-        assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::ConnectionRefused);
+        assert_eq!(
+            Socks5ReplyCode::from(&err),
+            Socks5ReplyCode::ConnectionRefused
+        );
 
         let err = io::Error::new(io::ErrorKind::TimedOut, "timeout");
-        assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::HostUnreachable);
+        assert_eq!(
+            Socks5ReplyCode::from(&err),
+            Socks5ReplyCode::HostUnreachable
+        );
 
         let err = io::Error::new(io::ErrorKind::AddrNotAvailable, "addr not available");
-        assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::HostUnreachable);
+        assert_eq!(
+            Socks5ReplyCode::from(&err),
+            Socks5ReplyCode::HostUnreachable
+        );
 
         let err = io::Error::new(io::ErrorKind::Other, "other");
         assert_eq!(Socks5ReplyCode::from(&err), Socks5ReplyCode::GeneralFailure);
@@ -263,7 +272,10 @@ mod tests {
         assert_eq!(format!("{}", err), "Timeout: timeout");
 
         let err = SockratsError::Serialization("serialization error".to_string());
-        assert_eq!(format!("{}", err), "Serialization error: serialization error");
+        assert_eq!(
+            format!("{}", err),
+            "Serialization error: serialization error"
+        );
     }
 
     #[test]

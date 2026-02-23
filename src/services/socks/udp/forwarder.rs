@@ -2,8 +2,8 @@
 //!
 //! Manages UDP forwarding sessions.
 
-use crate::socks::types::TargetAddr;
-use crate::socks::udp::packet::UdpPacket;
+use crate::services::socks::types::TargetAddr;
+use crate::services::socks::udp::packet::UdpPacket;
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -70,11 +70,16 @@ impl UdpForwarder {
         }
 
         // Resolve target address
-        let target_addr = packet.addr.resolve().await
+        let target_addr = packet
+            .addr
+            .resolve()
+            .await
             .with_context(|| format!("Failed to resolve UDP target: {}", packet.addr))?;
 
         // Get or create session
-        let session = self.get_or_create_session(target_addr, &packet.addr).await?;
+        let session = self
+            .get_or_create_session(target_addr, &packet.addr)
+            .await?;
 
         // Send data through session
         if let Err(e) = session.send_tx.send(packet.data).await {
@@ -103,9 +108,12 @@ impl UdpForwarder {
         }
 
         // Create new session
-        let socket = UdpSocket::bind("0.0.0.0:0").await
+        let socket = UdpSocket::bind("0.0.0.0:0")
+            .await
             .with_context(|| "Failed to bind UDP socket")?;
-        socket.connect(target_addr).await
+        socket
+            .connect(target_addr)
+            .await
             .with_context(|| format!("Failed to connect UDP socket to {}", target_addr))?;
 
         let socket = Arc::new(socket);
@@ -120,11 +128,14 @@ impl UdpForwarder {
         // Store session
         {
             let mut sessions = self.sessions.write().await;
-            sessions.insert(target_addr, UdpSession {
-                socket: socket.clone(),
-                last_activity: Instant::now(),
-                send_tx,
-            });
+            sessions.insert(
+                target_addr,
+                UdpSession {
+                    socket: socket.clone(),
+                    last_activity: Instant::now(),
+                    send_tx,
+                },
+            );
         }
 
         // Spawn sender task
@@ -139,7 +150,15 @@ impl UdpForwarder {
         let addr = original_addr.clone();
         let timeout = self.session_timeout;
         tokio::spawn(async move {
-            run_receiver(socket, target_addr, addr, outbound_tx, sessions_ref, timeout).await;
+            run_receiver(
+                socket,
+                target_addr,
+                addr,
+                outbound_tx,
+                sessions_ref,
+                timeout,
+            )
+            .await;
         });
 
         Ok(session)
@@ -233,16 +252,14 @@ mod tests {
     #[tokio::test]
     async fn test_udp_forwarder_with_timeout() {
         let (tx, _rx) = mpsc::channel(16);
-        let forwarder = UdpForwarder::new(tx)
-            .with_timeout(Duration::from_secs(60));
+        let forwarder = UdpForwarder::new(tx).with_timeout(Duration::from_secs(60));
         assert_eq!(forwarder.session_timeout, Duration::from_secs(60));
     }
 
     #[tokio::test]
     async fn test_cleanup_expired_sessions() {
         let (tx, _rx) = mpsc::channel(16);
-        let forwarder = UdpForwarder::new(tx)
-            .with_timeout(Duration::from_millis(10));
+        let forwarder = UdpForwarder::new(tx).with_timeout(Duration::from_millis(10));
 
         // No sessions to clean up
         forwarder.cleanup_expired().await;

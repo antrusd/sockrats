@@ -2,7 +2,7 @@
 //!
 //! Provides encrypted connections using the Noise protocol framework.
 
-use super::{AddrMaybeCached, SocketOpts, Transport, TransportDyn, StreamDyn};
+use super::{AddrMaybeCached, SocketOpts, StreamDyn, Transport, TransportDyn};
 use crate::config::{NoiseConfig, TransportConfig};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -83,11 +83,10 @@ impl Transport for NoiseTransport {
         let resolved = addr.resolve().await?;
 
         // Connect TCP first
-        let tcp_stream =
-            tokio::time::timeout(self.connect_timeout, TcpStream::connect(resolved))
-                .await
-                .with_context(|| format!("Connection timeout to {}", addr.addr()))?
-                .with_context(|| format!("Failed to connect to {}", addr.addr()))?;
+        let tcp_stream = tokio::time::timeout(self.connect_timeout, TcpStream::connect(resolved))
+            .await
+            .with_context(|| format!("Connection timeout to {}", addr.addr()))?
+            .with_context(|| format!("Failed to connect to {}", addr.addr()))?;
 
         // Apply socket options before Noise handshake
         self.socket_opts.apply(&tcp_stream)?;

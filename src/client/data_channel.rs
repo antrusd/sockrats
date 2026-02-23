@@ -1,37 +1,28 @@
 //! Data channel handling
 //!
-//! Manages individual data channels for SOCKS5 and SSH request processing.
+//! Manages individual data channels for service request processing.
+//! Routes incoming connections to the appropriate service handler
+//! (SOCKS5, SSH, etc.) via the [`ServiceHandler`] trait.
 
-use crate::config::SocksConfig;
 use crate::protocol::{read_data_cmd, write_hello, DataChannelCmd, Digest, Hello};
-use crate::socks::handle_socks5_on_stream;
-use crate::ssh::{handle_ssh_on_stream, SshConfig};
+use crate::services::ServiceHandler;
 use crate::transport::{AddrMaybeCached, SocketOpts, Transport};
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::debug;
 
-/// Service handler type
-#[derive(Clone, Debug)]
-pub enum ServiceHandler {
-    /// SOCKS5 proxy handler
-    Socks5(SocksConfig),
-    /// SSH server handler
-    Ssh(Arc<SshConfig>),
-}
-
-/// Run a data channel for handling a SOCKS5 or SSH request
+/// Run a data channel for handling a service request
 ///
 /// This function:
 /// 1. Connects to the rathole server
 /// 2. Sends data channel hello with session key
 /// 3. Receives the forward command
-/// 4. Routes to the appropriate handler (SOCKS5 or SSH)
+/// 4. Routes to the appropriate handler via the [`ServiceHandler`] trait
 pub async fn run_data_channel<T: Transport>(
     transport: Arc<T>,
     remote_addr: AddrMaybeCached,
     session_key: Digest,
-    handler: ServiceHandler,
+    handler: Arc<dyn ServiceHandler>,
 ) -> Result<()> {
     // Connect to server
     let mut conn = transport
@@ -54,62 +45,23 @@ pub async fn run_data_channel<T: Transport>(
 
     match cmd {
         DataChannelCmd::StartForwardTcp => {
-            match handler {
-                ServiceHandler::Socks5(socks_config) => {
-                    debug!("Starting TCP forwarding (SOCKS5)");
-                    handle_socks5_on_stream(conn, &socks_config)
-                        .await
-                        .context("SOCKS5 handling failed")?;
-                }
-                ServiceHandler::Ssh(ssh_config) => {
-                    info!("Starting TCP forwarding (SSH)");
-                    handle_ssh_on_stream(conn, ssh_config)
-                        .await
-                        .context("SSH handling failed")?;
-                }
-            }
+            debug!("Starting TCP forwarding ({})", handler.service_type());
+            handler
+                .handle_tcp_stream(Box::new(conn))
+                .await
+                .with_context(|| format!("{} TCP handling failed", handler.service_type()))?;
         }
         DataChannelCmd::StartForwardUdp => {
-            match handler {
-                ServiceHandler::Socks5(socks_config) => {
-                    if socks_config.allow_udp {
-                        debug!("Starting UDP forwarding");
-                        warn!("UDP forwarding via data channel not fully implemented");
-                    } else {
-                        warn!("UDP forwarding not allowed by configuration");
-                    }
-                }
-                ServiceHandler::Ssh(_) => {
-                    warn!("UDP forwarding not supported for SSH service");
-                }
-            }
+            debug!("Starting UDP forwarding ({})", handler.service_type());
+            handler
+                .handle_udp_stream(Box::new(conn))
+                .await
+                .with_context(|| format!("{} UDP handling failed", handler.service_type()))?;
         }
     }
 
     debug!("Data channel completed");
     Ok(())
-}
-
-/// Run a SOCKS5 data channel (backward compatible helper)
-#[allow(dead_code)]
-pub async fn run_socks5_data_channel<T: Transport>(
-    transport: Arc<T>,
-    remote_addr: AddrMaybeCached,
-    session_key: Digest,
-    socks_config: SocksConfig,
-) -> Result<()> {
-    run_data_channel(transport, remote_addr, session_key, ServiceHandler::Socks5(socks_config)).await
-}
-
-/// Run an SSH data channel
-#[allow(dead_code)]
-pub async fn run_ssh_data_channel<T: Transport>(
-    transport: Arc<T>,
-    remote_addr: AddrMaybeCached,
-    session_key: Digest,
-    ssh_config: Arc<SshConfig>,
-) -> Result<()> {
-    run_data_channel(transport, remote_addr, session_key, ServiceHandler::Ssh(ssh_config)).await
 }
 
 /// Data channel arguments for spawning
@@ -122,8 +74,8 @@ pub struct DataChannelArgs<T: Transport> {
     pub remote_addr: AddrMaybeCached,
     /// Session key for authentication
     pub session_key: Digest,
-    /// Service handler (SOCKS5 or SSH)
-    pub handler: ServiceHandler,
+    /// Service handler
+    pub handler: Arc<dyn ServiceHandler>,
 }
 
 #[allow(dead_code)]
@@ -133,7 +85,7 @@ impl<T: Transport> DataChannelArgs<T> {
         transport: Arc<T>,
         remote_addr: AddrMaybeCached,
         session_key: Digest,
-        handler: ServiceHandler,
+        handler: Arc<dyn ServiceHandler>,
     ) -> Self {
         DataChannelArgs {
             transport,
@@ -157,13 +109,38 @@ impl<T: Transport> DataChannelArgs<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::SocksConfig;
+    use crate::services::{ServiceHandler, StreamDyn};
+
+    // A minimal mock service handler for data channel tests
+    #[derive(Debug)]
+    struct MockHandler;
+
+    #[async_trait::async_trait]
+    impl ServiceHandler for MockHandler {
+        fn service_type(&self) -> &str {
+            "mock"
+        }
+
+        async fn handle_tcp_stream(&self, _stream: Box<dyn StreamDyn>) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
-    fn test_data_channel_args() {
-        // Test that DataChannelArgs can be created
-        // Full testing requires mock transport
-        let config = SocksConfig::default();
-        assert!(!config.auth_required);
+    fn test_mock_handler_service_type() {
+        let handler = MockHandler;
+        assert_eq!(handler.service_type(), "mock");
+    }
+
+    #[test]
+    fn test_mock_handler_is_healthy() {
+        let handler = MockHandler;
+        assert!(handler.is_healthy());
+    }
+
+    #[test]
+    fn test_mock_handler_validate() {
+        let handler = MockHandler;
+        assert!(handler.validate().is_ok());
     }
 }

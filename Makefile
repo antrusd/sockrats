@@ -1,4 +1,4 @@
-.PHONY: all build test coverage lint clean fmt \
+.PHONY: all build test coverage lint clean fmt check \
         build-linux build-linux-docker \
 		build-windows build-windows-docker build-macos-docker \
 		build-all build-all-docker
@@ -15,23 +15,22 @@ MACOS_TARGETS := x86_64-apple-darwin aarch64-apple-darwin
 
 all: lint test build
 
-# Build using cargo
-build:
-	cargo build --release
-
 # Build in Docker (static with musl)
-build-docker:
+build:
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
 		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && cargo build --release"
 
+# Check in Docker
+check:
+	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
+		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && cargo check --all-features"
+
 # Run tests
 test:
-	cargo test --all-features --verbose
-
-# Run tests in Docker
-test-docker:
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
@@ -39,10 +38,6 @@ test-docker:
 
 # Run coverage
 coverage:
-	cargo tarpaulin --out Html --fail-under 80
-
-# Run coverage in Docker (requires --privileged for ASLR disable)
-coverage-docker:
 	docker run --network host --rm --privileged --security-opt seccomp=unconfined \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
 		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
@@ -52,12 +47,17 @@ coverage-docker:
 
 # Lint
 lint:
-	cargo fmt -- --check
-	cargo clippy --all-features -- -D warnings
+	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
+		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && rustup component add rustfmt clippy && cargo fmt -- --check && cargo clippy --all-features -- -D warnings"
 
 # Format code
 fmt:
-	cargo fmt
+	docker run --network host --rm \
+		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
+		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+		sh -c "apk add --no-cache musl-dev pkgconf cmake make perl clang openssl-dev openssl-libs-static && rustup component add rustfmt && cargo fmt"
 
 # Clean build artifacts
 clean:

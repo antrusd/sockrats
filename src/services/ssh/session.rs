@@ -76,7 +76,10 @@ impl ChannelState {
 
     /// Get environment variables as a Vec of (name, value) tuples
     pub fn env_vars(&self) -> Vec<(String, String)> {
-        self.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 }
 

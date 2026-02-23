@@ -3,6 +3,7 @@
 //! This module contains the main client logic for connecting to
 //! the rathole server and handling SOCKS5 requests.
 
+#[allow(clippy::module_inception)]
 mod client;
 mod control_channel;
 mod data_channel;

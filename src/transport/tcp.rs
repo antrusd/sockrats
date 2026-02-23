@@ -2,7 +2,7 @@
 //!
 //! Provides plain TCP connections for the rathole protocol.
 
-use super::{AddrMaybeCached, SocketOpts, Transport, TransportDyn, StreamDyn};
+use super::{AddrMaybeCached, SocketOpts, StreamDyn, Transport, TransportDyn};
 use crate::config::TransportConfig;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -123,8 +123,8 @@ mod tests {
     async fn test_tcp_transport_connect_localhost() {
         // This test requires a local server, so we just test that connection
         // attempts to a non-existent port fail appropriately
-        let transport = TcpTransport::with_defaults()
-            .with_connect_timeout(Duration::from_millis(100));
+        let transport =
+            TcpTransport::with_defaults().with_connect_timeout(Duration::from_millis(100));
 
         let addr = AddrMaybeCached::new("127.0.0.1:59999");
         let result = transport.connect(&addr).await;

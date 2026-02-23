@@ -2,7 +2,7 @@
 //!
 //! Constructs SOCKS5 reply messages.
 
-use crate::socks::consts::*;
+use crate::services::socks::consts::*;
 use anyhow::Result;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -32,15 +32,10 @@ pub async fn build_reply<S>(
 where
     S: AsyncWrite + Unpin,
 {
-    let bind_addr = bind_addr.unwrap_or_else(|| {
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0)
-    });
+    let bind_addr =
+        bind_addr.unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0));
 
-    let mut reply = vec![
-        SOCKS5_VERSION,
-        reply_code,
-        SOCKS5_RESERVED,
-    ];
+    let mut reply = vec![SOCKS5_VERSION, reply_code, SOCKS5_RESERVED];
 
     // Add address
     match bind_addr {
@@ -108,15 +103,10 @@ where
 /// Build reply bytes without sending (used in tests)
 #[cfg(test)]
 fn build_reply_bytes(reply_code: u8, bind_addr: Option<SocketAddr>) -> Vec<u8> {
-    let bind_addr = bind_addr.unwrap_or_else(|| {
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0)
-    });
+    let bind_addr =
+        bind_addr.unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0));
 
-    let mut reply = vec![
-        SOCKS5_VERSION,
-        reply_code,
-        SOCKS5_RESERVED,
-    ];
+    let mut reply = vec![SOCKS5_VERSION, reply_code, SOCKS5_RESERVED];
 
     match bind_addr {
         SocketAddr::V4(addr) => {
@@ -154,10 +144,7 @@ mod tests {
 
     #[test]
     fn test_build_reply_bytes_ipv6() {
-        let addr = SocketAddr::new(
-            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-            443,
-        );
+        let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)), 443);
         let reply = build_reply_bytes(SOCKS5_REPLY_SUCCEEDED, Some(addr));
 
         assert_eq!(reply[0], SOCKS5_VERSION);

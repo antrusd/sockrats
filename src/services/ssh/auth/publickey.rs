@@ -2,9 +2,9 @@
 //!
 //! This module handles public key-based SSH authentication.
 
-use super::authorized_keys::AuthorizedKeys;
 #[cfg(feature = "ssh")]
 use super::super::config::SshConfig;
+use super::authorized_keys::AuthorizedKeys;
 #[cfg(feature = "ssh")]
 use std::collections::HashMap;
 

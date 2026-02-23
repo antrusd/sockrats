@@ -8,7 +8,9 @@ mod transport;
 
 pub use client::{ClientConfig, Config, ServiceConfig, ServiceListExt, ServiceType, SocksConfig};
 pub use pool::PoolConfig;
-pub use transport::{TcpConfig, TlsConfig, NoiseConfig, WebsocketConfig, TransportConfig, TransportType};
+pub use transport::{
+    NoiseConfig, TcpConfig, TlsConfig, TransportConfig, TransportType, WebsocketConfig,
+};
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -23,8 +25,7 @@ pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Config> {
 
 /// Parse configuration from a TOML string
 pub fn parse_config(content: &str) -> Result<Config> {
-    toml::from_str(content)
-        .with_context(|| "Failed to parse configuration")
+    toml::from_str(content).with_context(|| "Failed to parse configuration")
 }
 
 #[cfg(test)]

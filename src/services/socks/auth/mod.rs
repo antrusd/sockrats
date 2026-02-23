@@ -10,8 +10,8 @@ pub use none::NoAuth;
 #[allow(unused_imports)]
 pub use password::PasswordAuth;
 
-use crate::config::SocksConfig;
 use super::consts::*;
+use crate::config::SocksConfig;
 use anyhow::{bail, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -86,7 +86,12 @@ where
 
     // Step 4: Send selected method
     stream
-        .write_all(&[SOCKS5_VERSION, selected_method.map(|m| m.to_byte()).unwrap_or(SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE)])
+        .write_all(&[
+            SOCKS5_VERSION,
+            selected_method
+                .map(|m| m.to_byte())
+                .unwrap_or(SOCKS5_AUTH_METHOD_NOT_ACCEPTABLE),
+        ])
         .await?;
     stream.flush().await?;
 
@@ -152,7 +157,10 @@ mod tests {
 
         // Should select no auth when available
         let methods = vec![SOCKS5_AUTH_METHOD_NONE, SOCKS5_AUTH_METHOD_PASSWORD];
-        assert_eq!(select_auth_method(&methods, &config), Some(AuthMethod::None));
+        assert_eq!(
+            select_auth_method(&methods, &config),
+            Some(AuthMethod::None)
+        );
 
         // Should return None if only password and no credentials
         let methods = vec![SOCKS5_AUTH_METHOD_PASSWORD];
@@ -191,7 +199,10 @@ mod tests {
 
         // Should prefer no auth even with credentials
         let methods = vec![SOCKS5_AUTH_METHOD_NONE, SOCKS5_AUTH_METHOD_PASSWORD];
-        assert_eq!(select_auth_method(&methods, &config), Some(AuthMethod::None));
+        assert_eq!(
+            select_auth_method(&methods, &config),
+            Some(AuthMethod::None)
+        );
 
         // But should use password if no auth not available
         let methods = vec![SOCKS5_AUTH_METHOD_PASSWORD];

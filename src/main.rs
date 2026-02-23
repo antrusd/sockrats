@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use clap::Parser;
-use sockrats::config::load_config;
 use sockrats::client::run_client;
+use sockrats::config::load_config;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
 use tracing::{info, Level};
@@ -53,8 +53,8 @@ async fn main() -> Result<()> {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{signal, SignalKind};
-            let mut sigterm = signal(SignalKind::terminate())
-                .expect("Failed to setup SIGTERM handler");
+            let mut sigterm =
+                signal(SignalKind::terminate()).expect("Failed to setup SIGTERM handler");
 
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {

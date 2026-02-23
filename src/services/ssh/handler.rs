@@ -13,11 +13,11 @@ use super::session::{new_shared_session, ChannelState, SharedSessionState};
 use std::sync::Arc;
 
 #[cfg(feature = "ssh")]
+use russh::keys::PublicKey;
+#[cfg(feature = "ssh")]
 use russh::server::{Auth, Handler, Msg, Session};
 #[cfg(feature = "ssh")]
 use russh::{Channel, ChannelId, CryptoVec};
-#[cfg(feature = "ssh")]
-use russh::keys::PublicKey;
 
 /// SSH server handler
 #[cfg(feature = "ssh")]
@@ -189,7 +189,13 @@ impl Handler for SshHandler {
 
         let mut state = self.session_state.lock().await;
         if let Some(ch) = state.get_channel_mut(channel_id) {
-            ch.set_pty(term.to_string(), col_width, row_height, pix_width, pix_height);
+            ch.set_pty(
+                term.to_string(),
+                col_width,
+                row_height,
+                pix_width,
+                pix_height,
+            );
             session.channel_success(channel)?;
         } else {
             session.channel_failure(channel)?;
@@ -239,15 +245,13 @@ impl Handler for SshHandler {
 
         // Spawn the shell process
         let shell = &self.config.default_shell;
-        match self.shell_manager.spawn_shell(
-            channel_id,
-            shell,
-            channel,
-            handle,
-            env_vars,
-            term,
-            pty_config,
-        ).await {
+        match self
+            .shell_manager
+            .spawn_shell(
+                channel_id, shell, channel, handle, env_vars, term, pty_config,
+            )
+            .await
+        {
             Ok(()) => {
                 tracing::info!(channel_id, shell, "Shell spawned successfully");
                 session.channel_success(channel)?;
@@ -286,7 +290,8 @@ impl Handler for SshHandler {
         // Get environment variables for this channel
         let env_vars = {
             let state = self.session_state.lock().await;
-            state.get_channel(channel_id)
+            state
+                .get_channel(channel_id)
                 .map(|ch| ch.env_vars().to_vec())
                 .unwrap_or_default()
         };

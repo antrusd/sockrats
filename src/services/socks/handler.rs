@@ -5,12 +5,12 @@
 //! and request handling.
 
 use crate::config::SocksConfig;
-use crate::socks::auth::authenticate;
-use crate::socks::command::{build_reply, parse_command};
-use crate::socks::consts::*;
-use crate::socks::tcp_relay::handle_tcp_connect;
-use crate::socks::types::SocksCommand;
-use crate::socks::udp::handle_udp_associate;
+use crate::services::socks::auth::authenticate;
+use crate::services::socks::command::{build_reply, parse_command};
+use crate::services::socks::consts::*;
+use crate::services::socks::tcp_relay::handle_tcp_connect;
+use crate::services::socks::types::SocksCommand;
+use crate::services::socks::udp::handle_udp_associate;
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -121,15 +121,16 @@ mod tests {
     fn test_create_handshake_no_auth() {
         let addr = &[
             SOCKS5_ADDR_TYPE_IPV4,
-            127, 0, 0, 1,  // IP
-            0x1F, 0x90,    // Port 8080
+            127,
+            0,
+            0,
+            1, // IP
+            0x1F,
+            0x90, // Port 8080
         ];
 
-        let handshake = create_socks5_handshake(
-            SOCKS5_AUTH_METHOD_NONE,
-            SOCKS5_CMD_TCP_CONNECT,
-            addr,
-        );
+        let handshake =
+            create_socks5_handshake(SOCKS5_AUTH_METHOD_NONE, SOCKS5_CMD_TCP_CONNECT, addr);
 
         // Verify auth negotiation
         assert_eq!(handshake[0], SOCKS5_VERSION);

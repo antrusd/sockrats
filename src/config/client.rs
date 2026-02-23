@@ -2,9 +2,9 @@
 //!
 //! Defines the main configuration structures for the Sockrats client.
 
-use crate::ssh::SshConfig;
-use serde::{Deserialize, Serialize};
 use super::{PoolConfig, TransportConfig};
+use crate::services::ssh::SshConfig;
+use serde::{Deserialize, Serialize};
 
 /// Default heartbeat timeout in seconds
 fn default_heartbeat_timeout() -> u64 {
@@ -19,19 +19,14 @@ pub struct Config {
 }
 
 /// Service type for multi-service support
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ServiceType {
     /// SOCKS5 proxy service
+    #[default]
     Socks5,
     /// SSH server service
     Ssh,
-}
-
-impl Default for ServiceType {
-    fn default() -> Self {
-        ServiceType::Socks5
-    }
 }
 
 /// Service configuration for a single service
@@ -72,11 +67,15 @@ impl ServiceListExt for Vec<ServiceConfig> {
     }
 
     fn socks_services(&self) -> Vec<&ServiceConfig> {
-        self.iter().filter(|s| s.service_type == ServiceType::Socks5).collect()
+        self.iter()
+            .filter(|s| s.service_type == ServiceType::Socks5)
+            .collect()
     }
 
     fn ssh_services(&self) -> Vec<&ServiceConfig> {
-        self.iter().filter(|s| s.service_type == ServiceType::Ssh).collect()
+        self.iter()
+            .filter(|s| s.service_type == ServiceType::Ssh)
+            .collect()
     }
 }
 

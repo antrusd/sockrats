@@ -4,9 +4,9 @@
 //! and relaying data bidirectionally.
 
 use crate::config::SocksConfig;
-use crate::socks::command::build_reply;
-use crate::socks::consts::*;
-use crate::socks::types::TargetAddr;
+use crate::services::socks::command::build_reply;
+use crate::services::socks::consts::*;
+use crate::services::socks::types::TargetAddr;
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -37,7 +37,9 @@ where
     let timeout = Duration::from_secs(config.request_timeout);
 
     // Resolve address
-    let socket_addr = target_addr.resolve().await
+    let socket_addr = target_addr
+        .resolve()
+        .await
         .with_context(|| format!("Failed to resolve address: {}", target_addr))?;
 
     debug!("Connecting to target: {}", socket_addr);
@@ -123,10 +125,19 @@ mod tests {
     #[test]
     fn test_io_error_to_reply_code() {
         let cases = vec![
-            (io::ErrorKind::ConnectionRefused, SOCKS5_REPLY_CONNECTION_REFUSED),
+            (
+                io::ErrorKind::ConnectionRefused,
+                SOCKS5_REPLY_CONNECTION_REFUSED,
+            ),
             (io::ErrorKind::TimedOut, SOCKS5_REPLY_HOST_UNREACHABLE),
-            (io::ErrorKind::AddrNotAvailable, SOCKS5_REPLY_HOST_UNREACHABLE),
-            (io::ErrorKind::PermissionDenied, SOCKS5_REPLY_CONNECTION_NOT_ALLOWED),
+            (
+                io::ErrorKind::AddrNotAvailable,
+                SOCKS5_REPLY_HOST_UNREACHABLE,
+            ),
+            (
+                io::ErrorKind::PermissionDenied,
+                SOCKS5_REPLY_CONNECTION_NOT_ALLOWED,
+            ),
             (io::ErrorKind::Other, SOCKS5_REPLY_GENERAL_FAILURE),
             (io::ErrorKind::NotFound, SOCKS5_REPLY_GENERAL_FAILURE),
         ];
@@ -168,9 +179,7 @@ mod tests {
         let (mut client_b, server_b) = duplex(1024);
 
         // Spawn the relay
-        let relay_handle = tokio::spawn(async move {
-            relay_tcp(server_a, server_b).await
-        });
+        let relay_handle = tokio::spawn(async move { relay_tcp(server_a, server_b).await });
 
         // Write to client_a, should be readable from client_b
         client_a.write_all(b"hello from a").await.unwrap();
@@ -194,9 +203,7 @@ mod tests {
         let (mut client_a, server_a) = duplex(1024);
         let (mut client_b, server_b) = duplex(1024);
 
-        let relay_handle = tokio::spawn(async move {
-            relay_tcp(server_a, server_b).await
-        });
+        let relay_handle = tokio::spawn(async move { relay_tcp(server_a, server_b).await });
 
         // Write from A to B
         client_a.write_all(b"message A->B").await.unwrap();
@@ -225,9 +232,7 @@ mod tests {
         let (mut client_a, server_a) = duplex(65536);
         let (mut client_b, server_b) = duplex(65536);
 
-        let relay_handle = tokio::spawn(async move {
-            relay_tcp(server_a, server_b).await
-        });
+        let relay_handle = tokio::spawn(async move { relay_tcp(server_a, server_b).await });
 
         // Send large data
         let large_data = vec![0xAB; 50000];
@@ -249,9 +254,7 @@ mod tests {
         let (mut client_a, server_a) = duplex(1024);
         let (client_b, server_b) = duplex(1024);
 
-        let relay_handle = tokio::spawn(async move {
-            relay_tcp(server_a, server_b).await
-        });
+        let relay_handle = tokio::spawn(async move { relay_tcp(server_a, server_b).await });
 
         // Send some data then close
         client_a.write_all(b"data").await.unwrap();
@@ -268,9 +271,7 @@ mod tests {
         let (client_a, server_a) = duplex(1024);
         let (client_b, server_b) = duplex(1024);
 
-        let relay_handle = tokio::spawn(async move {
-            relay_tcp(server_a, server_b).await
-        });
+        let relay_handle = tokio::spawn(async move { relay_tcp(server_a, server_b).await });
 
         // Close immediately without writing
         drop(client_a);

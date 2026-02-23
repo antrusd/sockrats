@@ -131,100 +131,109 @@ Remote SSH Client → Rathole Server → Data Channel → handle_ssh_on_stream()
 
 ```
 sockrats/
-├── Cargo.toml                       # Package manifest with feature flags
-├── Cargo.lock                       # Dependency lock file
-├── Cross.toml                       # Cross-compilation configuration
-├── Makefile                         # Build system with Docker cross-compilation
-├── README.md                        # Project README
-├── ARCHITECTURE.md                  # This file
-├── .gitignore                       # Git ignore rules
+├── Cargo.toml                         # Package manifest with feature flags
+├── Cargo.lock                         # Dependency lock file
+├── Cross.toml                         # Cross-compilation configuration
+├── Makefile                           # Build system with Docker cross-compilation
+├── README.md                          # Project README
+├── ARCHITECTURE.md                    # This file
+├── .gitignore                         # Git ignore rules
 │
 ├── src/
-│   ├── main.rs                      # Entry point: CLI args, logging, signal handling
-│   ├── lib.rs                       # Library root: module exports, VERSION, NAME constants
-│   ├── error.rs                     # Error types: SockratsError, Socks5Error, Socks5ReplyCode
-│   ├── helper.rs                    # Utilities: RetryConfig, copy_bidirectional, constants
+│   ├── main.rs                        # Entry point: CLI args, logging, signal handling
+│   ├── lib.rs                         # Library root: module exports, VERSION, NAME constants
+│   ├── error.rs                       # Error types: SockratsError, Socks5Error, Socks5ReplyCode
+│   ├── helper.rs                      # Utilities: RetryConfig, copy_bidirectional, constants
 │   │
-│   ├── config/                      # Configuration module
-│   │   ├── mod.rs                   # load_config(), parse_config()
-│   │   ├── client.rs                # Config, ClientConfig, ServiceConfig, SocksConfig, ServiceType
-│   │   ├── transport.rs             # TransportType, TransportConfig, TlsConfig, NoiseConfig, etc.
-│   │   └── pool.rs                  # PoolConfig with validation
+│   ├── config/                        # Configuration module
+│   │   ├── mod.rs                     # load_config(), parse_config()
+│   │   ├── client.rs                  # Config, ClientConfig, ServiceConfig, SocksConfig, ServiceType
+│   │   ├── transport.rs               # TransportType, TransportConfig, TlsConfig, NoiseConfig, etc.
+│   │   └── pool.rs                    # PoolConfig with validation
 │   │
-│   ├── protocol/                    # Rathole wire protocol
-│   │   ├── mod.rs                   # Re-exports
-│   │   ├── types.rs                 # Hello, Auth, Ack, ControlChannelCmd, DataChannelCmd, UdpTraffic
-│   │   ├── codec.rs                 # read_*/write_* async codec functions, bincode serialization
-│   │   └── digest.rs                # SHA-256 digest for authentication
+│   ├── protocol/                      # Rathole wire protocol
+│   │   ├── mod.rs                     # Re-exports
+│   │   ├── types.rs                   # Hello, Auth, Ack, ControlChannelCmd, DataChannelCmd, UdpTraffic
+│   │   ├── codec.rs                   # read_*/write_* async codec functions, bincode serialization
+│   │   └── digest.rs                  # SHA-256 digest for authentication
 │   │
-│   ├── transport/                   # Transport layer abstraction
-│   │   ├── mod.rs                   # Transport trait, TransportDyn/StreamDyn, create_transport()
-│   │   ├── addr.rs                  # AddrMaybeCached with DNS caching
-│   │   ├── tcp.rs                   # TcpTransport
-│   │   ├── tls.rs                   # TlsTransport (rustls with NoVerifier for skip_verify)
-│   │   └── noise.rs                 # NoiseTransport (snowstorm)
+│   ├── transport/                     # Transport layer abstraction
+│   │   ├── mod.rs                     # Transport trait, TransportDyn/StreamDyn, create_transport()
+│   │   ├── addr.rs                    # AddrMaybeCached with DNS caching
+│   │   ├── tcp.rs                     # TcpTransport
+│   │   ├── tls.rs                     # TlsTransport (rustls with NoVerifier for skip_verify)
+│   │   └── noise.rs                   # NoiseTransport (snowstorm)
 │   │
-│   ├── client/                      # Client logic
-│   │   ├── mod.rs                   # run_client() - transport selection entry point
-│   │   ├── client.rs                # Client<T> - multi-service orchestration
-│   │   ├── control_channel.rs       # ControlChannel<T> - handshake, reconnection, heartbeat
-│   │   └── data_channel.rs          # ServiceHandler enum, run_data_channel() routing
+│   ├── client/                        # Client logic
+│   │   ├── mod.rs                     # run_client() - transport selection entry point
+│   │   ├── client.rs                  # Client<T> - multi-service orchestration with ServiceHandler
+│   │   ├── control_channel.rs         # ControlChannel<T> - handshake, reconnection, heartbeat
+│   │   └── data_channel.rs            # run_data_channel() routing via Arc<dyn ServiceHandler>
 │   │
-│   ├── socks/                       # In-memory SOCKS5 server
-│   │   ├── mod.rs                   # Re-exports all SOCKS5 components
-│   │   ├── consts.rs                # SOCKS5 protocol constants
-│   │   ├── types.rs                 # SocksCommand, TargetAddr enums
-│   │   ├── handler.rs               # handle_socks5_on_stream() main entry
-│   │   ├── tcp_relay.rs             # handle_tcp_connect(), relay_tcp()
-│   │   ├── auth/                    # SOCKS5 authentication
-│   │   │   ├── mod.rs               # AuthMethod enum, authenticate(), select_auth_method()
-│   │   │   ├── none.rs              # NoAuth handler
-│   │   │   └── password.rs          # PasswordAuth RFC 1929 implementation
-│   │   ├── command/                 # SOCKS5 command handling
-│   │   │   ├── mod.rs               # Re-exports
-│   │   │   ├── parser.rs            # parse_command() with IPv4/IPv6/domain parsing
-│   │   │   └── reply.rs             # build_reply(), send_success(), send_io_error(), etc.
-│   │   └── udp/                     # UDP ASSOCIATE support
-│   │       ├── mod.rs               # UdpRelay struct
-│   │       ├── associate.rs         # handle_udp_associate() (virtual mode for reverse tunnel)
-│   │       ├── forwarder.rs         # UdpForwarder with session management
-│   │       └── packet.rs            # UdpPacket encode/decode per RFC 1928
+│   ├── services/                      # Service handler abstraction layer
+│   │   ├── mod.rs                     # ServiceHandler trait, ServiceRegistry, StreamDyn,
+│   │   │                              #   create_service_handler(), create_legacy_handler()
+│   │   ├── socks/                     # In-memory SOCKS5 server + Socks5ServiceHandler
+│   │   │   ├── mod.rs                 # Socks5ServiceHandler, re-exports all SOCKS5 components
+│   │   │   ├── consts.rs              # SOCKS5 protocol constants
+│   │   │   ├── types.rs               # SocksCommand, TargetAddr enums
+│   │   │   ├── handler.rs             # handle_socks5_on_stream() main entry
+│   │   │   ├── tcp_relay.rs           # handle_tcp_connect(), relay_tcp()
+│   │   │   ├── auth/                  # SOCKS5 authentication
+│   │   │   │   ├── mod.rs             # AuthMethod enum, authenticate(), select_auth_method()
+│   │   │   │   ├── none.rs            # NoAuth handler
+│   │   │   │   └── password.rs        # PasswordAuth RFC 1929 implementation
+│   │   │   ├── command/               # SOCKS5 command handling
+│   │   │   │   ├── mod.rs             # Re-exports
+│   │   │   │   ├── parser.rs          # parse_command() with IPv4/IPv6/domain parsing
+│   │   │   │   └── reply.rs           # build_reply(), send_success(), send_io_error(), etc.
+│   │   │   └── udp/                   # UDP ASSOCIATE support
+│   │   │       ├── mod.rs             # UdpRelay struct
+│   │   │       ├── associate.rs       # handle_udp_associate() (virtual mode for reverse tunnel)
+│   │   │       ├── forwarder.rs       # UdpForwarder with session management
+│   │   │       └── packet.rs          # UdpPacket encode/decode per RFC 1928
+│   │   │
+│   │   ├── ssh/                       # Embedded SSH server + SshServiceHandler (feature-gated: "ssh")
+│   │   │   ├── mod.rs                 # SshServiceHandler, handle_ssh_on_stream(), build_russh_config()
+│   │   │   ├── config.rs              # SshConfig with validation
+│   │   │   ├── handler.rs             # SshHandler implementing russh::server::Handler
+│   │   │   ├── keys.rs                # Host key management: load, generate, save, fingerprint
+│   │   │   ├── session.rs             # SessionState, ChannelState, ChannelType
+│   │   │   ├── process.rs             # ShellManager, ShellProcess, PtyConfig, exec_command()
+│   │   │   └── auth/                  # SSH authentication
+│   │   │       ├── mod.rs             # AuthResult enum
+│   │   │       ├── authorized_keys.rs # AuthorizedKeys parser (OpenSSH format)
+│   │   │       ├── password.rs        # verify_password() with constant-time comparison
+│   │   │       └── publickey.rs       # PublicKeyAuth, verify_public_key()
+│   │   │
+│   │   └── template/                  # Template for adding new service types
+│   │       └── mod.rs                 # Documented skeleton with instructions
 │   │
-│   ├── ssh/                         # Embedded SSH server (feature-gated: "ssh")
-│   │   ├── mod.rs                   # handle_ssh_on_stream(), build_russh_config()
-│   │   ├── config.rs                # SshConfig with validation
-│   │   ├── handler.rs               # SshHandler implementing russh::server::Handler
-│   │   ├── keys.rs                  # Host key management: load, generate, save, fingerprint
-│   │   ├── session.rs               # SessionState, ChannelState, ChannelType
-│   │   ├── process.rs               # ShellManager, ShellProcess, PtyConfig, exec_command()
-│   │   └── auth/                    # SSH authentication
-│   │       ├── mod.rs               # AuthResult enum
-│   │       ├── authorized_keys.rs   # AuthorizedKeys parser (OpenSSH format)
-│   │       ├── password.rs          # verify_password() with constant-time comparison
-│   │       └── publickey.rs         # PublicKeyAuth, verify_public_key()
-│   │
-│   └── pool/                        # Connection pool
-│       ├── mod.rs                   # ChannelType enum, create_pool()
-│       ├── channel.rs               # PooledChannel<S> with metadata and staleness check
-│       ├── guard.rs                 # PooledChannelGuard<S> RAII guard with mpsc return
-│       ├── manager.rs               # PoolManager, PoolStats, PoolStatsSnapshot
-│       └── tcp_pool.rs              # TcpChannelPool<T> - full pool with warm-up, maintenance
+│   └── pool/                          # Connection pool
+│       ├── mod.rs                     # ChannelType enum, create_pool()
+│       ├── channel.rs                 # PooledChannel<S> with metadata and staleness check
+│       ├── guard.rs                   # PooledChannelGuard<S> RAII guard with mpsc return
+│       ├── manager.rs                 # PoolManager, PoolStats, PoolStatsSnapshot
+│       └── tcp_pool.rs                # TcpChannelPool<T> - full pool with warm-up, maintenance
 │
-├── examples/                        # Example configurations
-│   ├── config.toml                  # Full configuration with all options documented
-│   ├── config-minimal.toml          # Minimal single-service configuration
-│   └── config-multiple-minimal.toml # Minimal multi-service configuration
+├── examples/                          # Example configurations
+│   ├── config.toml                    # Full configuration with all options documented
+│   ├── config-minimal.toml            # Minimal single-service configuration
+│   └── config-multiple-minimal.toml   # Minimal multi-service configuration
 │
-└── tests/                           # Integration tests
-    ├── test-integration.sh          # Shell-based integration test script
+├── plans/                             # Architecture decision records
+│   └── services-refactoring.md        # Services refactoring plan and design
+│
+└── tests/                             # Integration tests
+    ├── test-integration.sh            # Shell-based integration test script
     ├── common/
-    │   └── mod.rs                   # Test utilities: mock streams, TestConfigBuilder, socks5_mock
+    │   └── mod.rs                     # Test utilities: mock streams, TestConfigBuilder, socks5_mock
     └── fixtures/
-        ├── test-config.toml         # Multi-service test config
-        ├── test-multi-service.toml  # Multi-service test config with global socks
-        ├── test-socks5.toml         # SOCKS5-specific test config
-        ├── test-ssh.toml            # SSH-specific test config
-        └── rathole-server.toml      # Rathole server config for integration tests
+        ├── test-config.toml           # Multi-service test config
+        ├── test-multi-service.toml    # Multi-service test config with global socks
+        ├── test-socks5.toml           # SOCKS5-specific test config
+        ├── test-ssh.toml              # SSH-specific test config
+        └── rathole-server.toml        # Rathole server config for integration tests
 ```
 
 ## Build System
@@ -792,9 +801,11 @@ impl<T: Transport + 'static> Client<T> {
 
         for service in &services {
             let service_config = self.create_service_config(service);
-            // Spawn a control channel per service
+            // Create service handler via the services factory
+            let handler = create_service_handler(service)?;
+            // Spawn a control channel per service with its handler
             tokio::spawn(async move {
-                let cc = ControlChannel::<T>::new(service_config);
+                let cc = ControlChannel::<T>::new(service_config, handler);
                 cc.run().await
             });
         }
@@ -810,36 +821,34 @@ impl<T: Transport + 'static> Client<T> {
 }
 ```
 
+For backward-compatible single-service mode (no `[[client.services]]`), `Client` uses `create_legacy_handler()`:
+
+```rust
+// When no services are configured, create a handler from legacy config fields
+let handler = create_legacy_handler(&self.config.service_name, &self.config.socks, &self.config.ssh);
+```
+
 #### Control Channel (`src/client/control_channel.rs`)
+
+The control channel now receives its `Arc<dyn ServiceHandler>` via the constructor, instead
+of determining the handler from the service name heuristic.
 
 ```rust
 pub struct ControlChannel<T: Transport> {
     config: ClientConfig,
-    _phantom: PhantomData<T>,
+    transport: Arc<T>,
+    handler: Arc<dyn ServiceHandler>,
 }
 
 impl<T: Transport + 'static> ControlChannel<T> {
-    pub async fn run(&self) -> Result<()> {
-        let retry = RetryConfig::new(10); // Max 10 reconnection attempts
-        let mut attempt = 0;
+    pub fn new(config: ClientConfig, transport: Arc<T>, handler: Arc<dyn ServiceHandler>) -> Self;
 
-        loop {
-            match self.run_once().await {
-                Ok(_) => { attempt = 0; }
-                Err(e) => {
-                    attempt += 1;
-                    if attempt >= retry.max_retries {
-                        return Err(e);
-                    }
-                    let delay = retry.delay_for_attempt(attempt);
-                    tokio::time::sleep(delay).await;
-                }
-            }
-        }
+    pub async fn run(&self) -> Result<()> {
+        // Reconnection loop with exponential backoff
     }
 
     async fn run_once(&self) -> Result<()> {
-        // 1. Create transport and connect
+        // 1. Connect via transport
         // 2. Perform handshake (Hello → Auth → Ack)
         // 3. Listen for ControlChannelCmd
     }
@@ -854,22 +863,23 @@ impl<T: Transport + 'static> ControlChannel<T> {
 
     async fn handle_commands<S>(&self, conn: S, session_key: Digest) {
         // Loop reading ControlChannelCmd:
-        //   CreateDataChannel → spawn run_data_channel()
+        //   CreateDataChannel → spawn run_data_channel() with self.handler.clone()
         //   HeartBeat → respond with heartbeat
-    }
-
-    fn determine_service_handler(&self) -> ServiceHandler {
-        // Returns Ssh if service name contains "ssh", otherwise Socks5
     }
 }
 ```
 
 #### Data Channel (`src/client/data_channel.rs`)
 
+The data channel uses the `ServiceHandler` trait (from `src/services/mod.rs`) via dynamic dispatch,
+replacing the previous `ServiceHandler` enum:
+
 ```rust
-pub enum ServiceHandler {
-    Socks5(SocksConfig),
-    Ssh(Arc<SshConfig>),
+pub struct DataChannelArgs<T: Transport> {
+    config: ClientConfig,
+    transport: Arc<T>,
+    session_key: Digest,
+    handler: Arc<dyn ServiceHandler>,
 }
 
 pub async fn run_data_channel<T: Transport>(
@@ -877,29 +887,91 @@ pub async fn run_data_channel<T: Transport>(
 ) -> Result<()> {
     // 1. Connect to server, send DataChannelHello
     // 2. Read DataChannelCmd
-    // 3. Route based on ServiceHandler:
+    // 3. Route to handler via trait dispatch:
     match cmd {
         DataChannelCmd::StartForwardTcp => {
-            match handler {
-                ServiceHandler::Socks5(config) => handle_socks5_on_stream(stream, &config).await,
-                ServiceHandler::Ssh(config) => handle_ssh_on_stream(stream, config).await,
-            }
+            handler.handle_tcp_stream(Box::new(conn)).await?;
         }
         DataChannelCmd::StartForwardUdp => {
-            match handler {
-                ServiceHandler::Socks5(config) => { /* UDP handling */ },
-                ServiceHandler::Ssh(_) => { /* SSH doesn't use UDP */ },
-            }
+            handler.handle_udp_stream(Box::new(conn)).await?;
         }
     }
 }
 ```
 
-### 5. In-Memory SOCKS5 Handler (`src/socks/`)
+### 5. Service Handler Architecture (`src/services/`)
+
+The services module provides a unified, extensible architecture for handling different
+protocol types. Each service implements the `ServiceHandler` trait.
+
+#### Core Trait (`src/services/mod.rs`)
+
+```rust
+/// Trait alias for streams that can be used with service handlers
+pub trait StreamDyn: AsyncRead + AsyncWrite + Unpin + Send + Debug {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send + Debug> StreamDyn for T {}
+
+/// Common interface for all service types (SOCKS5, SSH, future services)
+#[async_trait::async_trait]
+pub trait ServiceHandler: Send + Sync + Debug {
+    fn service_type(&self) -> &str;
+    async fn handle_tcp_stream(&self, stream: Box<dyn StreamDyn>) -> Result<()>;
+    async fn handle_udp_stream(&self, _stream: Box<dyn StreamDyn>) -> Result<()> {
+        anyhow::bail!("UDP not supported by {} service", self.service_type())
+    }
+    fn is_healthy(&self) -> bool { true }
+    fn validate(&self) -> Result<()> { Ok(()) }
+}
+```
+
+#### Service Registry (`src/services/mod.rs`)
+
+```rust
+pub struct ServiceRegistry {
+    handlers: HashMap<String, Arc<dyn ServiceHandler>>,
+}
+
+impl ServiceRegistry {
+    pub fn new() -> Self;
+    pub fn register(&mut self, name: String, handler: Arc<dyn ServiceHandler>);
+    pub fn get(&self, name: &str) -> Option<Arc<dyn ServiceHandler>>;
+    pub fn service_names(&self) -> Vec<&String>;
+}
+```
+
+#### Factory Functions (`src/services/mod.rs`)
+
+```rust
+/// Create a service handler from a ServiceConfig (multi-service mode)
+pub fn create_service_handler(service: &ServiceConfig) -> Result<Arc<dyn ServiceHandler>>;
+
+/// Create a legacy handler from service name + global config (single-service mode)
+pub fn create_legacy_handler(
+    service_name: &str, socks_config: &SocksConfig, ssh_config: &SshConfig,
+) -> Arc<dyn ServiceHandler>;
+```
+
+#### Concrete Implementations
+
+- **`Socks5ServiceHandler`** (`src/services/socks/mod.rs`) — Wraps `SocksConfig`, delegates
+  TCP streams to `handle_socks5_on_stream()`, UDP to `handle_udp_associate()`
+- **`SshServiceHandler`** (`src/services/ssh/mod.rs`) — Wraps `SshConfig`, delegates
+  TCP streams to `handle_ssh_on_stream()`, UDP not supported
+- **Template** (`src/services/template/mod.rs`) — Documented skeleton for new services
+
+#### Adding a New Service Type
+
+1. Create `src/services/myservice/mod.rs`
+2. Implement `ServiceHandler` trait
+3. Add module declaration to `src/services/mod.rs`
+4. Add variant to `ServiceType` enum in `src/config/client.rs`
+5. Update `create_service_handler()` factory function
+
+### 6. In-Memory SOCKS5 Handler (`src/services/socks/`)
 
 The SOCKS5 server implements RFC 1928 (SOCKS5) and RFC 1929 (username/password auth).
 
-#### Handler (`src/socks/handler.rs`)
+#### Handler (`src/services/socks/handler.rs`)
 
 ```rust
 pub async fn handle_socks5_on_stream<S>(mut stream: S, config: &SocksConfig) -> Result<()>
@@ -933,7 +1005,7 @@ pub async fn handle_socks5_with_timeout<S>(
 }
 ```
 
-#### Authentication (`src/socks/auth/`)
+#### Authentication (`src/services/socks/auth/`)
 
 ```rust
 pub enum AuthMethod {
@@ -953,7 +1025,7 @@ fn select_auth_method(methods: &[u8], config: &SocksConfig) -> Option<AuthMethod
 }
 ```
 
-Password authentication (`src/socks/auth/password.rs`) implements RFC 1929:
+Password authentication (`src/services/socks/auth/password.rs`) implements RFC 1929:
 ```rust
 impl PasswordAuth {
     pub async fn authenticate<S>(stream: &mut S, config: &SocksConfig) -> Result<()> {
@@ -964,7 +1036,7 @@ impl PasswordAuth {
 }
 ```
 
-#### TCP Relay (`src/socks/tcp_relay.rs`)
+#### TCP Relay (`src/services/socks/tcp_relay.rs`)
 
 ```rust
 pub async fn handle_tcp_connect<S>(
@@ -985,12 +1057,12 @@ where
 }
 ```
 
-#### UDP ASSOCIATE (`src/socks/udp/`)
+#### UDP ASSOCIATE (`src/services/socks/udp/`)
 
 UDP ASSOCIATE operates in "virtual mode" for reverse tunnel compatibility:
 
 ```rust
-// src/socks/udp/associate.rs
+// src/services/socks/udp/associate.rs
 pub async fn handle_udp_associate<S>(
     mut control_stream: S, _client_addr: TargetAddr, _config: &SocksConfig,
 ) -> Result<()> {
@@ -1000,7 +1072,7 @@ pub async fn handle_udp_associate<S>(
 }
 ```
 
-UDP packet encoding (`src/socks/udp/packet.rs`):
+UDP packet encoding (`src/services/socks/udp/packet.rs`):
 ```rust
 pub struct UdpPacket {
     pub frag: u8,
@@ -1012,7 +1084,7 @@ pub fn parse_udp_packet(data: &[u8]) -> Result<UdpPacket>;
 pub fn encode_udp_packet(packet: &UdpPacket) -> Vec<u8>;
 ```
 
-UDP forwarding (`src/socks/udp/forwarder.rs`):
+UDP forwarding (`src/services/socks/udp/forwarder.rs`):
 ```rust
 pub struct UdpForwarder {
     sessions: Arc<RwLock<HashMap<SocketAddr, UdpSession>>>,
@@ -1026,7 +1098,7 @@ impl UdpForwarder {
 }
 ```
 
-#### Types (`src/socks/types.rs`)
+#### Types (`src/services/socks/types.rs`)
 
 ```rust
 pub enum SocksCommand {
@@ -1048,11 +1120,11 @@ impl TargetAddr {
 }
 ```
 
-### 6. Embedded SSH Server (`src/ssh/`)
+### 7. Embedded SSH Server (`src/services/ssh/`)
 
 The SSH server is feature-gated behind `#[cfg(feature = "ssh")]`. When the feature is disabled, `handle_ssh_on_stream` returns an error.
 
-#### Entry Point (`src/ssh/mod.rs`)
+#### Entry Point (`src/services/ssh/mod.rs`)
 
 ```rust
 #[cfg(feature = "ssh")]
@@ -1081,7 +1153,7 @@ fn build_russh_config(config: &SshConfig) -> Result<russh::server::Config> {
 }
 ```
 
-#### SSH Configuration (`src/ssh/config.rs`)
+#### SSH Configuration (`src/services/ssh/config.rs`)
 
 ```rust
 #[derive(Debug, Clone, Deserialize)]
@@ -1125,7 +1197,7 @@ impl SshConfig {
 }
 ```
 
-#### SSH Handler (`src/ssh/handler.rs`)
+#### SSH Handler (`src/services/ssh/handler.rs`)
 
 Implements `russh::server::Handler`:
 
@@ -1155,7 +1227,7 @@ impl Handler for SshHandler {
 }
 ```
 
-#### Session State (`src/ssh/session.rs`)
+#### Session State (`src/services/ssh/session.rs`)
 
 ```rust
 pub enum ChannelType {
@@ -1185,7 +1257,7 @@ pub struct SessionState {
 pub type SharedSessionState = Arc<Mutex<SessionState>>;
 ```
 
-#### Process Management (`src/ssh/process.rs`)
+#### Process Management (`src/services/ssh/process.rs`)
 
 ```rust
 pub struct ShellProcess {
@@ -1228,7 +1300,7 @@ pub async fn exec_command(
 // Executes a one-shot command and streams stdout/stderr back
 ```
 
-#### Host Key Management (`src/ssh/keys.rs`)
+#### Host Key Management (`src/services/ssh/keys.rs`)
 
 ```rust
 pub fn load_host_key(path: &Path) -> Result<PrivateKey>;
@@ -1239,27 +1311,27 @@ pub fn key_fingerprint(key: &PrivateKey) -> String;
 
 When no `host_key` path is configured, `build_russh_config` generates an ephemeral Ed25519 key.
 
-#### SSH Authentication (`src/ssh/auth/`)
+#### SSH Authentication (`src/services/ssh/auth/`)
 
 ```rust
-// src/ssh/auth/mod.rs
+// src/services/ssh/auth/mod.rs
 pub enum AuthResult {
     Success,
     Failure,
     Partial,
 }
 
-// src/ssh/auth/password.rs
+// src/services/ssh/auth/password.rs
 pub fn verify_password(config: &SshConfig, username: &str, password: &str) -> bool;
 // Uses constant_time_compare() to prevent timing attacks
 
-// src/ssh/auth/publickey.rs
+// src/services/ssh/auth/publickey.rs
 pub struct PublicKeyAuth {
     authorized_keys: AuthorizedKeys,
 }
 pub fn verify_public_key(auth: Option<&PublicKeyAuth>, config: &SshConfig, key: &PublicKey) -> bool;
 
-// src/ssh/auth/authorized_keys.rs
+// src/services/ssh/auth/authorized_keys.rs
 pub struct AuthorizedKey {
     pub key: PublicKey,
     pub comment: Option<String>,
@@ -1275,7 +1347,7 @@ impl AuthorizedKeys {
 }
 ```
 
-### 7. Connection Pool (`src/pool/`)
+### 8. Connection Pool (`src/pool/`)
 
 #### Pool Types (`src/pool/mod.rs`)
 
@@ -1402,7 +1474,7 @@ impl PoolManager {
 }
 ```
 
-### 8. Error Types (`src/error.rs`)
+### 9. Error Types (`src/error.rs`)
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -1447,7 +1519,7 @@ pub enum Socks5ReplyCode {
 }
 ```
 
-### 9. Helper Utilities (`src/helper.rs`)
+### 10. Helper Utilities (`src/helper.rs`)
 
 ```rust
 pub const CHAN_SIZE: usize = 2048;
@@ -1470,7 +1542,7 @@ impl RetryConfig {
 }
 ```
 
-### 10. Main Entry Point (`src/main.rs`)
+### 11. Main Entry Point (`src/main.rs`)
 
 ```rust
 #[derive(Parser, Debug)]
@@ -1523,7 +1595,7 @@ fn setup_logging(level: &str, json: bool) -> Result<()> {
 }
 ```
 
-### 11. Library Root (`src/lib.rs`)
+### 12. Library Root (`src/lib.rs`)
 
 ```rust
 #![warn(missing_docs)]
@@ -1535,9 +1607,12 @@ pub mod error;
 pub mod helper;
 pub mod pool;
 pub mod protocol;
-pub mod socks;
-pub mod ssh;
+pub mod services;
 pub mod transport;
+
+// Backward-compatible re-exports (services moved from top-level to services/)
+pub use services::socks;
+pub use services::ssh;
 
 pub use client::run_client;
 pub use config::{load_config, Config};
@@ -1720,18 +1795,28 @@ bind_addr = "0.0.0.0:2222"   # SSH clients connect here
 
 ### Service Handler Routing
 
-The `determine_service_handler()` method in `ControlChannel` determines the handler:
+Service handlers are created upfront via factory functions in `src/services/mod.rs` and
+passed to control channels as `Arc<dyn ServiceHandler>`. This replaces the previous
+name-based heuristic (`determine_service_handler()`).
 
+**Multi-service mode** (via `[[client.services]]`):
 ```rust
-fn determine_service_handler(&self) -> ServiceHandler {
-    // If service name contains "ssh", use SSH handler
-    // Otherwise, use SOCKS5 handler
-    if self.config.service_name.to_lowercase().contains("ssh") {
-        ServiceHandler::Ssh(Arc::new(self.config.ssh.clone().unwrap_or_default()))
-    } else {
-        ServiceHandler::Socks5(self.config.socks.clone())
-    }
-}
+// In Client::run() — each service gets a handler via create_service_handler()
+let handler: Arc<dyn ServiceHandler> = create_service_handler(&service_config)?;
+let cc = ControlChannel::<T>::new(config, transport, handler);
+```
+
+**Legacy single-service mode** (via `service_name`):
+```rust
+// In Client::run() — handler inferred from service name and global config
+let handler = create_legacy_handler(&config.service_name, &config.socks, &config.ssh);
+let cc = ControlChannel::<T>::new(config, transport, handler);
+```
+
+The handler is then forwarded to data channels via `Arc::clone()`:
+```rust
+// In ControlChannel::handle_commands()
+DataChannelArgs::new(config, transport, session_key, self.handler.clone())
 ```
 
 ## Security Considerations

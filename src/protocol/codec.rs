@@ -26,13 +26,11 @@ impl PacketLength {
     pub fn new() -> PacketLength {
         let username = "default";
         let d = super::digest::digest(username.as_bytes());
-        let hello =
-            bincode::serialized_size(&Hello::ControlChannelHello(CURRENT_PROTO_VERSION, d))
-                .unwrap() as usize;
+        let hello = bincode::serialized_size(&Hello::ControlChannelHello(CURRENT_PROTO_VERSION, d))
+            .unwrap() as usize;
         let c_cmd =
             bincode::serialized_size(&ControlChannelCmd::CreateDataChannel).unwrap() as usize;
-        let d_cmd =
-            bincode::serialized_size(&DataChannelCmd::StartForwardTcp).unwrap() as usize;
+        let d_cmd = bincode::serialized_size(&DataChannelCmd::StartForwardTcp).unwrap() as usize;
         let ack = bincode::serialized_size(&Ack::Ok).unwrap() as usize;
         let auth = bincode::serialized_size(&Auth(d)).unwrap() as usize;
 
@@ -56,8 +54,7 @@ pub async fn read_hello<T: AsyncRead + AsyncWrite + Unpin>(conn: &mut T) -> Resu
     conn.read_exact(&mut buf)
         .await
         .with_context(|| "Failed to read hello")?;
-    let hello: Hello =
-        bincode::deserialize(&buf).with_context(|| "Failed to deserialize hello")?;
+    let hello: Hello = bincode::deserialize(&buf).with_context(|| "Failed to deserialize hello")?;
 
     // Verify protocol version
     match &hello {
@@ -81,7 +78,9 @@ pub async fn write_hello<T: AsyncWrite + Unpin>(conn: &mut T, hello: &Hello) -> 
     conn.write_all(&buf)
         .await
         .with_context(|| "Failed to write hello")?;
-    conn.flush().await.with_context(|| "Failed to flush hello")?;
+    conn.flush()
+        .await
+        .with_context(|| "Failed to flush hello")?;
     Ok(())
 }
 
@@ -283,7 +282,10 @@ mod tests {
         // Should fail with version mismatch
         let result = read_hello(&mut server).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Protocol version mismatched"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Protocol version mismatched"));
     }
 
     #[tokio::test]

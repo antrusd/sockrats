@@ -70,8 +70,7 @@ impl RetryConfig {
             return self.initial_delay;
         }
 
-        let delay_ms = self.initial_delay.as_millis() as f64
-            * self.multiplier.powi(attempt as i32);
+        let delay_ms = self.initial_delay.as_millis() as f64 * self.multiplier.powi(attempt as i32);
         let delay = Duration::from_millis(delay_ms as u64);
 
         std::cmp::min(delay, self.max_delay)
@@ -175,9 +174,7 @@ mod tests {
         let (mut b1, mut b2) = duplex(1024);
 
         // Spawn copy task
-        let copy_task = tokio::spawn(async move {
-            copy_bidirectional(&mut a2, &mut b2).await
-        });
+        let copy_task = tokio::spawn(async move { copy_bidirectional(&mut a2, &mut b2).await });
 
         // Send data from a1 to b1 through the bidirectional copy
         a1.write_all(b"hello").await.unwrap();
@@ -196,10 +193,7 @@ mod tests {
         drop(b1);
 
         // Wait for copy to complete
-        let result = tokio::time::timeout(
-            Duration::from_millis(100),
-            copy_task
-        ).await;
+        let result = tokio::time::timeout(Duration::from_millis(100), copy_task).await;
         assert!(result.is_ok());
     }
 
@@ -208,9 +202,7 @@ mod tests {
         let (mut a1, mut a2) = duplex(65536);
         let (mut b1, mut b2) = duplex(65536);
 
-        let copy_task = tokio::spawn(async move {
-            copy_bidirectional(&mut a2, &mut b2).await
-        });
+        let copy_task = tokio::spawn(async move { copy_bidirectional(&mut a2, &mut b2).await });
 
         // Send large data
         let large_data = vec![0xAB; 50000];

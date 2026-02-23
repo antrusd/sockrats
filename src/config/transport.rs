@@ -83,7 +83,7 @@ impl Default for TcpConfig {
 }
 
 /// TLS transport configuration
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct TlsConfig {
     /// Server hostname for verification
     pub hostname: Option<String>,
@@ -94,16 +94,6 @@ pub struct TlsConfig {
     /// Skip certificate verification (dangerous!)
     #[serde(default)]
     pub skip_verify: bool,
-}
-
-impl Default for TlsConfig {
-    fn default() -> Self {
-        TlsConfig {
-            hostname: None,
-            trusted_root: None,
-            skip_verify: false,
-        }
-    }
 }
 
 /// Noise protocol configuration
@@ -202,9 +192,6 @@ mod tests {
 
     #[test]
     fn test_noise_pattern_default() {
-        assert_eq!(
-            default_noise_pattern(),
-            "Noise_NK_25519_ChaChaPoly_BLAKE2s"
-        );
+        assert_eq!(default_noise_pattern(), "Noise_NK_25519_ChaChaPoly_BLAKE2s");
     }
 }

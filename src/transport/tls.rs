@@ -119,8 +119,10 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for NoVerifier {
         _message: &[u8],
         _cert: &tokio_rustls::rustls::pki_types::CertificateDer<'_>,
         _dss: &tokio_rustls::rustls::DigitallySignedStruct,
-    ) -> Result<tokio_rustls::rustls::client::danger::HandshakeSignatureValid, tokio_rustls::rustls::Error>
-    {
+    ) -> Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
         Ok(tokio_rustls::rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
@@ -129,8 +131,10 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for NoVerifier {
         _message: &[u8],
         _cert: &tokio_rustls::rustls::pki_types::CertificateDer<'_>,
         _dss: &tokio_rustls::rustls::DigitallySignedStruct,
-    ) -> Result<tokio_rustls::rustls::client::danger::HandshakeSignatureValid, tokio_rustls::rustls::Error>
-    {
+    ) -> Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
         Ok(tokio_rustls::rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
@@ -173,27 +177,23 @@ impl Transport for TlsTransport {
         let resolved = addr.resolve().await?;
 
         // Connect TCP first
-        let tcp_stream =
-            tokio::time::timeout(self.connect_timeout, TcpStream::connect(resolved))
-                .await
-                .with_context(|| format!("Connection timeout to {}", addr.addr()))?
-                .with_context(|| format!("Failed to connect to {}", addr.addr()))?;
+        let tcp_stream = tokio::time::timeout(self.connect_timeout, TcpStream::connect(resolved))
+            .await
+            .with_context(|| format!("Connection timeout to {}", addr.addr()))?
+            .with_context(|| format!("Failed to connect to {}", addr.addr()))?;
 
         // Apply socket options before TLS handshake
         self.socket_opts.apply(&tcp_stream)?;
 
         // Determine hostname for TLS verification
-        let hostname = self
-            .hostname
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| {
-                // Extract hostname from address string
-                addr.addr().split(':').next().unwrap_or("localhost")
-            });
+        let hostname = self.hostname.as_deref().unwrap_or_else(|| {
+            // Extract hostname from address string
+            addr.addr().split(':').next().unwrap_or("localhost")
+        });
 
-        let server_name = tokio_rustls::rustls::pki_types::ServerName::try_from(hostname.to_string())
-            .with_context(|| format!("Invalid hostname: {}", hostname))?;
+        let server_name =
+            tokio_rustls::rustls::pki_types::ServerName::try_from(hostname.to_string())
+                .with_context(|| format!("Invalid hostname: {}", hostname))?;
 
         // Perform TLS handshake
         let tls_stream = self

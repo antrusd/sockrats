@@ -3,7 +3,7 @@
 //! Implements RFC 1929 username/password authentication for SOCKS5.
 
 use crate::config::SocksConfig;
-use crate::socks::consts::SOCKS5_AUTH_VERSION;
+use crate::services::socks::consts::SOCKS5_AUTH_VERSION;
 use anyhow::{bail, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -182,7 +182,10 @@ mod tests {
 
         let result = PasswordAuth::authenticate(&mut server, "user", "correctpass").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Authentication failed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Authentication failed"));
     }
 
     #[tokio::test]
@@ -195,7 +198,10 @@ mod tests {
 
         let result = PasswordAuth::authenticate(&mut server, "correctuser", "pass").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Authentication failed"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Authentication failed"));
     }
 
     #[tokio::test]
@@ -213,7 +219,10 @@ mod tests {
 
         let result = PasswordAuth::authenticate(&mut server, "user", "pass").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid auth version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid auth version"));
     }
 
     #[tokio::test]
@@ -230,7 +239,10 @@ mod tests {
 
         let result = PasswordAuth::authenticate(&mut server, "user", "pass").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid username length"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid username length"));
     }
 
     #[tokio::test]
@@ -247,7 +259,10 @@ mod tests {
 
         let result = PasswordAuth::authenticate(&mut server, "user", "pass").await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid password length"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid password length"));
     }
 
     #[tokio::test]
@@ -286,7 +301,10 @@ mod tests {
 
         let result = authenticate_password(&mut stream, &config).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Username not configured"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Username not configured"));
     }
 
     #[tokio::test]
@@ -304,7 +322,10 @@ mod tests {
 
         let result = authenticate_password(&mut stream, &config).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Password not configured"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Password not configured"));
     }
 
     #[tokio::test]
@@ -312,9 +333,8 @@ mod tests {
         let (mut client, mut server) = tokio::io::duplex(1024);
 
         // Spawn task to send auth result
-        let send_task = tokio::spawn(async move {
-            send_auth_result(&mut server, AUTH_SUCCESS).await
-        });
+        let send_task =
+            tokio::spawn(async move { send_auth_result(&mut server, AUTH_SUCCESS).await });
 
         // Read the response
         use tokio::io::AsyncReadExt;
@@ -331,9 +351,8 @@ mod tests {
         let (mut client, mut server) = tokio::io::duplex(1024);
 
         // Spawn task to send auth result
-        let send_task = tokio::spawn(async move {
-            send_auth_result(&mut server, AUTH_FAILURE).await
-        });
+        let send_task =
+            tokio::spawn(async move { send_auth_result(&mut server, AUTH_FAILURE).await });
 
         // Read the response
         use tokio::io::AsyncReadExt;

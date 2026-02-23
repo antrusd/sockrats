@@ -1,4 +1,5 @@
 dist/
 target/
+plans/
 tarpaulin-report.html
 coverage-detailed.txt

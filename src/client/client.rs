@@ -1,9 +1,11 @@
 //! Main client structure
 //!
-//! Manages the client lifecycle and transport.
+//! Manages the client lifecycle, builds the [`ServiceRegistry`] from
+//! configuration, and spawns control channels for each service.
 
 use super::control_channel::ControlChannel;
 use crate::config::{ClientConfig, ServiceConfig};
+use crate::services::{create_legacy_handler, create_service_handler};
 use crate::transport::Transport;
 use anyhow::Result;
 use std::sync::Arc;
@@ -38,8 +40,14 @@ impl<T: Transport + 'static> Client<T> {
             warn!("No services configured, using legacy single-service mode");
             info!("Service name: {}", self.config.service_name);
 
+            let handler = create_legacy_handler(
+                &self.config.service_name,
+                &self.config.socks,
+                &self.config.ssh,
+            );
+
             let control_channel =
-                ControlChannel::new(self.config.clone(), self.transport.clone());
+                ControlChannel::new(self.config.clone(), self.transport.clone(), handler);
 
             tokio::select! {
                 result = control_channel.run() => {
@@ -53,7 +61,7 @@ impl<T: Transport + 'static> Client<T> {
                 }
             }
         } else {
-            // Multi-service mode: spawn a control channel for each service
+            // Multi-service mode: build handlers and spawn control channels
             info!("Running {} services", services.len());
             for service in &services {
                 info!("  - {} (type: {:?})", service.name, service.service_type);
@@ -61,13 +69,14 @@ impl<T: Transport + 'static> Client<T> {
 
             let mut handles = Vec::new();
 
-            for service in services {
-                let config = self.create_service_config(&service);
+            for service in &services {
+                let handler = create_service_handler(service)?;
+                let config = self.create_service_config(service);
                 let transport = self.transport.clone();
                 let shutdown_rx = shutdown_rx.resubscribe();
 
                 let handle = tokio::spawn(async move {
-                    let control_channel = ControlChannel::new(config, transport);
+                    let control_channel = ControlChannel::new(config, transport, handler);
                     Self::run_service_loop(control_channel, shutdown_rx).await
                 });
                 handles.push(handle);
@@ -78,7 +87,7 @@ impl<T: Transport + 'static> Client<T> {
                 _ = shutdown_rx.recv() => {
                     info!("Shutdown signal received, stopping all services");
                 }
-                result = futures::future::select_all(handles.iter_mut().map(|h| Box::pin(h))) => {
+                result = futures::future::select_all(handles.iter_mut().map(Box::pin)) => {
                     if let (Ok(Err(e)), _, _) = result {
                         error!("A service control channel failed: {:#}", e);
                     }
@@ -137,12 +146,11 @@ impl<T: Transport + 'static> Client<T> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{SocksConfig, TransportConfig};
-    use crate::ssh::SshConfig;
+    use crate::services::ssh::SshConfig;
 
     fn create_test_config() -> ClientConfig {
         ClientConfig {
@@ -164,5 +172,19 @@ mod tests {
         assert_eq!(config.remote_addr, "127.0.0.1:2333");
         assert_eq!(config.service_name, "test-socks");
         assert_eq!(config.token, "test-token");
+    }
+
+    #[test]
+    fn test_create_legacy_handler_for_socks() {
+        let handler =
+            create_legacy_handler("my-proxy", &SocksConfig::default(), &SshConfig::default());
+        assert_eq!(handler.service_type(), "socks5");
+    }
+
+    #[test]
+    fn test_create_legacy_handler_for_ssh() {
+        let handler =
+            create_legacy_handler("my-ssh", &SocksConfig::default(), &SshConfig::default());
+        assert_eq!(handler.service_type(), "ssh");
     }
 }

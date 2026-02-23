@@ -5,6 +5,12 @@
 //! which handles line discipline (converting \n to \r\n, etc.)
 
 #[cfg(feature = "ssh")]
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+#[cfg(feature = "ssh")]
+use russh::server::Handle;
+#[cfg(feature = "ssh")]
+use russh::{ChannelId, CryptoVec};
+#[cfg(feature = "ssh")]
 use std::collections::HashMap;
 #[cfg(feature = "ssh")]
 use std::io::{Read, Write};
@@ -18,12 +24,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 #[cfg(feature = "ssh")]
 use tokio::sync::{mpsc, Mutex};
-#[cfg(feature = "ssh")]
-use russh::{ChannelId, CryptoVec};
-#[cfg(feature = "ssh")]
-use russh::server::Handle;
-#[cfg(feature = "ssh")]
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 /// Shell process wrapper
 #[cfg(feature = "ssh")]
@@ -82,6 +82,7 @@ impl ShellManager {
     }
 
     /// Spawn a new shell process for a channel with PTY support
+    #[allow(clippy::too_many_arguments)]
     pub async fn spawn_shell(
         &self,
         channel_id: u32,
@@ -97,28 +98,18 @@ impl ShellManager {
         // If PTY is requested, use portable-pty
         if let Some(pty_cfg) = pty_config {
             self.spawn_shell_with_pty(
-                channel_id,
-                shell,
-                channel,
-                handle,
-                env_vars,
-                term_type,
-                pty_cfg,
-            ).await
+                channel_id, shell, channel, handle, env_vars, term_type, pty_cfg,
+            )
+            .await
         } else {
             // Fallback to non-PTY mode (pipe-based)
-            self.spawn_shell_no_pty(
-                channel_id,
-                shell,
-                channel,
-                handle,
-                env_vars,
-                term_type,
-            ).await
+            self.spawn_shell_no_pty(channel_id, shell, channel, handle, env_vars, term_type)
+                .await
         }
     }
 
     /// Spawn a shell with a real PTY
+    #[allow(clippy::too_many_arguments)]
     async fn spawn_shell_with_pty(
         &self,
         channel_id: u32,
@@ -217,7 +208,7 @@ impl ShellManager {
                     if status.success() {
                         0u32
                     } else {
-                        status.exit_code() as u32
+                        status.exit_code()
                     }
                 }
                 Err(_) => 1,
@@ -252,8 +243,8 @@ impl ShellManager {
         cmd.arg("-i");
 
         cmd.stdin(Stdio::piped())
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         for (key, value) in env_vars {
             cmd.env(&key, &value);
@@ -290,7 +281,11 @@ impl ShellManager {
                 match stdout.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if handle_stdout.data(channel_for_stdout, CryptoVec::from(&buf[..n])).await.is_err() {
+                        if handle_stdout
+                            .data(channel_for_stdout, CryptoVec::from(&buf[..n]))
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -309,7 +304,11 @@ impl ShellManager {
                 match stderr.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if handle_stderr.extended_data(channel_for_stderr, 1, CryptoVec::from(&buf[..n])).await.is_err() {
+                        if handle_stderr
+                            .extended_data(channel_for_stderr, 1, CryptoVec::from(&buf[..n]))
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -327,7 +326,9 @@ impl ShellManager {
                 Ok(status) => status.code().unwrap_or(1) as u32,
                 Err(_) => 1,
             };
-            let _ = handle_exit.exit_status_request(channel_for_exit, exit_status).await;
+            let _ = handle_exit
+                .exit_status_request(channel_for_exit, exit_status)
+                .await;
             let _ = handle_exit.eof(channel_for_exit).await;
             let _ = handle_exit.close(channel_for_exit).await;
         });
@@ -394,8 +395,8 @@ pub async fn exec_command(
     cmd.arg("-c").arg(command);
 
     cmd.stdin(Stdio::null())
-       .stdout(Stdio::piped())
-       .stderr(Stdio::piped());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     for (key, value) in &env_vars {
         cmd.env(key, value);
@@ -416,7 +417,11 @@ pub async fn exec_command(
             match stdout.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    if handle_stdout.data(channel, CryptoVec::from(&buf[..n])).await.is_err() {
+                    if handle_stdout
+                        .data(channel, CryptoVec::from(&buf[..n]))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -434,7 +439,11 @@ pub async fn exec_command(
             match stderr.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => {
-                    if handle_stderr.extended_data(channel, 1, CryptoVec::from(&buf[..n])).await.is_err() {
+                    if handle_stderr
+                        .extended_data(channel, 1, CryptoVec::from(&buf[..n]))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

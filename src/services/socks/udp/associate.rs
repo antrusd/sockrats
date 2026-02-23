@@ -2,9 +2,9 @@
 //!
 //! Implements the UDP ASSOCIATE command for SOCKS5.
 
-use crate::socks::command::build_reply;
-use crate::socks::consts::*;
-use crate::socks::types::TargetAddr;
+use crate::services::socks::command::build_reply;
+use crate::services::socks::consts::*;
+use crate::services::socks::types::TargetAddr;
 use anyhow::Result;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
@@ -41,7 +41,12 @@ where
     let virtual_bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
 
     // Send success reply with virtual bind address
-    build_reply(&mut control_stream, SOCKS5_REPLY_SUCCEEDED, Some(virtual_bind_addr)).await?;
+    build_reply(
+        &mut control_stream,
+        SOCKS5_REPLY_SUCCEEDED,
+        Some(virtual_bind_addr),
+    )
+    .await?;
 
     info!("UDP ASSOCIATE established (virtual mode)");
 

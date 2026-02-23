@@ -9,13 +9,13 @@ mod digest;
 mod types;
 
 pub use codec::{
-    read_ack, read_auth, read_control_cmd, read_data_cmd, read_hello,
-    write_ack, write_auth, write_control_cmd, write_data_cmd, write_hello,
+    read_ack, read_auth, read_control_cmd, read_data_cmd, read_hello, write_ack, write_auth,
+    write_control_cmd, write_data_cmd, write_hello,
 };
 pub use digest::digest;
 pub use types::{
-    Ack, Auth, ControlChannelCmd, DataChannelCmd, Digest, Hello,
-    UdpTraffic, CURRENT_PROTO_VERSION, HASH_WIDTH_IN_BYTES,
+    Ack, Auth, ControlChannelCmd, DataChannelCmd, Digest, Hello, UdpTraffic, CURRENT_PROTO_VERSION,
+    HASH_WIDTH_IN_BYTES,
 };
 
 #[cfg(test)]
