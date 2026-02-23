@@ -1,5 +1,8 @@
 # Cross.toml - Configuration for cross-compilation
 # See: https://github.com/cross-rs/cross
+#
+# Note: Primary cross-compilation uses cargo-zigbuild (see Makefile).
+# This file is kept for compatibility with `cross` tool if needed.
 
 [build.env]
 passthrough = [
@@ -10,30 +13,18 @@ passthrough = [
 # Linux x86_64 GNU
 [target.x86_64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
-pre-build = [
-    "apt-get update && apt-get install -y pkg-config libssl-dev"
-]
 
 # Linux x86_64 musl (static linking)
 [target.x86_64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
-pre-build = [
-    "apk add --no-cache openssl-dev openssl-libs-static"
-]
 
 # Linux ARM64 GNU
 [target.aarch64-unknown-linux-gnu]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
-pre-build = [
-    "apt-get update && apt-get install -y pkg-config libssl-dev"
-]
 
 # Linux ARM64 musl (static linking)
 [target.aarch64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
-pre-build = [
-    "apk add --no-cache openssl-dev openssl-libs-static"
-]
 
 # Windows x86_64 GNU (MinGW)
 [target.x86_64-pc-windows-gnu]

@@ -103,7 +103,7 @@ pub trait ServiceHandler: Send + Sync + Debug {
 /// A dynamic stream trait for service handlers.
 ///
 /// This is a convenience alias combining the traits needed for service I/O.
-/// It allows service handlers to accept any stream type (TCP, TLS, Noise, etc.)
+/// It allows service handlers to accept any stream type (TCP, Noise, etc.)
 /// without being generic over the transport.
 pub trait StreamDyn: AsyncRead + AsyncWrite + Unpin + Send + Debug {}
 

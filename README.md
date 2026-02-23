@@ -9,8 +9,8 @@ A Rust-based reverse SOCKS5 tunneling client that connects to a rathole server a
 - **No Local Listeners**: SOCKS5 server operates purely in-memory on tunnel streams
 - **Full UDP ASSOCIATE Support**: Complete UDP relay for DNS and other UDP protocols
 - **Connection Pooling**: Pre-established data channel pool for improved performance
-- **Multiple Transports**: TCP, TLS, Noise protocol, and WebSocket support
-- **Cross-Platform**: Builds for Linux, Windows, and macOS (x86_64 and ARM64)
+- **Encrypted Transport**: Noise protocol (pure Rust, zero C dependencies)
+- **Cross-Platform**: Static builds for Linux, Windows, and macOS via zigbuild
 
 ## Quick Start
 
@@ -25,11 +25,11 @@ A Rust-based reverse SOCKS5 tunneling client that connects to a rathole server a
 # Using cargo
 cargo build --release
 
-# Using Docker
-docker build -t sockrats .
-
-# Using Make
+# Using Docker (Alpine, static musl)
 make build
+
+# Cross-compile all platforms
+make build-all-docker
 ```
 
 ### Configure
@@ -106,32 +106,28 @@ make lint
 
 ## Cross-Platform Builds
 
-Sockrats supports cross-compilation for multiple platforms. All cross-compilation uses the `rust:slim-trixie` Docker image.
+All cross-compilation uses `cargo-zigbuild` via the `ghcr.io/rust-cross/cargo-zigbuild:0.21.4` Docker image. No OpenSSL or osxcross required — all dependencies are pure Rust.
 
 ### Supported Targets
 
-| Platform       | Architecture     | Target Triple                |
-|----------------|------------------|------------------------------|
-| Linux          | x86_64           | `x86_64-unknown-linux-gnu`   |
-| Linux (static) | x86_64           | `x86_64-unknown-linux-musl`  |
-| Linux          | ARM64            | `aarch64-unknown-linux-gnu`  |
-| Linux (static) | ARM64            | `aarch64-unknown-linux-musl` |
-| Windows        | x86_64           | `x86_64-pc-windows-gnu`      |
-| macOS          | x86_64 (Intel)   | `x86_64-apple-darwin`        |
-| macOS          | ARM64 (M1/M2/M3) | `aarch64-apple-darwin`       |
+| Platform       | Architecture      | Target Triple                  |
+|----------------|-------------------|--------------------------------|
+| Linux (static) | x86_64            | `x86_64-unknown-linux-musl`    |
+| Linux (static) | ARM64             | `aarch64-unknown-linux-musl`   |
+| Windows        | x86_64            | `x86_64-pc-windows-gnu`        |
+| macOS          | x86_64 (Intel)    | `x86_64-apple-darwin`          |
+| macOS          | ARM64 (M1/M2/M3) | `aarch64-apple-darwin`         |
 
 ### Building for Cross-Platform (Using Docker)
-
-All cross-compilation commands use the `rust:slim-trixie` Docker image:
 
 ```bash
 # Build for all Linux targets
 make build-linux-docker
 
-# Build for Windows
+# Build for all Windows targets
 make build-windows-docker
 
-# Build for macOS (Intel + Apple Silicon M1/M2/M3)
+# Build for all macOS targets (Intel + Apple Silicon)
 make build-macos-docker
 
 # Build for all platforms
@@ -149,9 +145,7 @@ make targets
 Binaries are placed in the `dist/` directory:
 ```
 dist/
-├── x86_64-unknown-linux-gnu/sockrats
 ├── x86_64-unknown-linux-musl/sockrats
-├── aarch64-unknown-linux-gnu/sockrats
 ├── aarch64-unknown-linux-musl/sockrats
 ├── x86_64-pc-windows-gnu/sockrats.exe
 ├── x86_64-apple-darwin/sockrats        # Intel Mac
@@ -165,14 +159,6 @@ dist/
 make build-all-docker
 make release-archives
 # Archives will be in dist/release/
-```
-
-### Native macOS Build
-
-If you're on a macOS host, you can build natively:
-
-```bash
-make build-macos
 ```
 
 ### Using Pre-built Binaries

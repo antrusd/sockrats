@@ -1,8 +1,17 @@
 # Minimal Sockrats Configuration
 #
 # This is the minimal configuration required to run Sockrats.
+# Uses plain TCP transport (no encryption). For encrypted transport,
+# configure the noise section (see config.toml for full example).
 
 [client]
 remote_addr = "server.example.com:2333"
 service_name = "socks5"
 token = "your-secret-token"
+
+# Uncomment to use Noise protocol encryption:
+# [client.transport]
+# type = "noise"
+#
+# [client.transport.noise]
+# remote_public_key = "base64-encoded-server-public-key"

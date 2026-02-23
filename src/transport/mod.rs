@@ -1,25 +1,15 @@
 //! Transport module for Sockrats
 //!
 //! This module provides the transport layer abstraction and implementations
-//! for different protocols (TCP, TLS, Noise, WebSocket).
+//! for different protocols (TCP, Noise).
 
 mod addr;
+mod noise;
 mod tcp;
 
-#[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
-mod tls;
-
-#[cfg(feature = "noise")]
-mod noise;
-
 pub use addr::AddrMaybeCached;
-pub use tcp::TcpTransport;
-
-#[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
-pub use tls::TlsTransport;
-
-#[cfg(feature = "noise")]
 pub use noise::NoiseTransport;
+pub use tcp::TcpTransport;
 
 use crate::config::{TcpConfig, TransportConfig, TransportType};
 use anyhow::Result;
@@ -123,17 +113,10 @@ pub fn create_transport(config: &TransportConfig) -> Result<Box<dyn TransportDyn
             let transport = TcpTransport::new(config)?;
             Ok(Box::new(transport))
         }
-        #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
-        TransportType::Tls => {
-            let transport = TlsTransport::new(config)?;
-            Ok(Box::new(transport))
-        }
-        #[cfg(feature = "noise")]
         TransportType::Noise => {
             let transport = NoiseTransport::new(config)?;
             Ok(Box::new(transport))
         }
-        _ => anyhow::bail!("Transport type not supported or feature not enabled"),
     }
 }
 

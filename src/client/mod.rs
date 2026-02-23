@@ -13,7 +13,7 @@ pub use control_channel::ControlChannel;
 pub use data_channel::run_data_channel;
 
 use crate::config::Config;
-use crate::transport::TcpTransport;
+use crate::transport::{NoiseTransport, TcpTransport};
 use anyhow::Result;
 use tokio::sync::broadcast;
 
@@ -27,19 +27,10 @@ pub async fn run_client(config: Config, shutdown_rx: broadcast::Receiver<bool>) 
             let client = Client::<TcpTransport>::new(client_config).await?;
             client.run(shutdown_rx).await
         }
-        #[cfg(feature = "native-tls")]
-        crate::config::TransportType::Tls => {
-            use crate::transport::TlsTransport;
-            let client = Client::<TlsTransport>::new(client_config).await?;
-            client.run(shutdown_rx).await
-        }
-        #[cfg(feature = "noise")]
         crate::config::TransportType::Noise => {
-            use crate::transport::NoiseTransport;
             let client = Client::<NoiseTransport>::new(client_config).await?;
             client.run(shutdown_rx).await
         }
-        _ => anyhow::bail!("Transport type not supported or feature not enabled"),
     }
 }
 

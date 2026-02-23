@@ -18,10 +18,10 @@ heartbeat_timeout = 40
 
 # Transport configuration
 [client.transport]
-# Transport type: "tcp", "tls", "noise", or "websocket"
-type = "tcp"
+# Transport type: "tcp" or "noise"
+type = "noise"
 
-# TCP transport options
+# TCP transport options (applied to underlying TCP connection for all transport types)
 [client.transport.tcp]
 # Enable TCP_NODELAY for lower latency
 nodelay = true
@@ -30,23 +30,14 @@ keepalive_secs = 20
 # TCP keepalive interval in seconds
 keepalive_interval = 8
 
-# TLS transport options (uncomment to use)
-# [client.transport.tls]
-# hostname = "server.example.com"
-# trusted_root = "/path/to/ca.crt"
-# skip_verify = false  # WARNING: Only use for testing!
-
-# Noise protocol options (uncomment to use)
-# [client.transport.noise]
-# pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
-# remote_public_key = "base64-encoded-server-public-key"
-# local_private_key = "base64-encoded-client-private-key"  # Optional
-
-# WebSocket transport options (uncomment to use)
-# [client.transport.websocket]
-# path = "/"
-# tls = false
-# headers = [["X-Custom-Header", "value"]]
+# Noise protocol options (required when type = "noise")
+[client.transport.noise]
+# Noise protocol pattern (default: "Noise_NK_25519_ChaChaPoly_BLAKE2s")
+pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
+# Remote server's public key (base64 encoded, required)
+remote_public_key = "base64-encoded-server-public-key"
+# Local client private key (base64 encoded, optional for NK pattern)
+# local_private_key = "base64-encoded-client-private-key"
 
 # SOCKS5 server configuration
 [client.socks]

@@ -11,24 +11,7 @@ keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
 categories = ["network-programming", "command-line-utilities"]
 
 [features]
-default = ["rustls-tls", "noise", "ssh"]
-
-# TLS support using rustls (pure Rust, easy static linking)
-rustls-tls = ["tokio-rustls", "rustls-pemfile", "rustls-native-certs", "ring"]
-
-# TLS support using native-tls (requires OpenSSL)
-native-tls = ["tokio-native-tls"]
-native-tls-vendored = ["tokio-native-tls", "openssl-vendored"]
-
-# Vendored OpenSSL for static builds
-openssl-vendored = ["openssl/vendored"]
-
-# Noise protocol support
-noise = ["snowstorm", "base64"]
-
-# WebSocket support
-websocket-rustls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "rustls-tls"]
-websocket-native-tls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "native-tls"]
+default = ["ssh"]
 
 # SSH server support
 ssh = ["russh", "ssh-key", "rand", "portable-pty"]
@@ -65,29 +48,12 @@ backoff = { version = "0.4", features = ["tokio"] }
 tokio-stream = "0.1"
 futures = "0.3"
 
-# TLS with rustls (default - pure Rust, easy static linking)
-# Using default-features = false to avoid aws-lc-rs which requires macOS SDK for cross-compilation
-tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
-rustls-native-certs = { version = "0.8", optional = true }
-rustls-pemfile = { version = "2.0", optional = true }
-ring = { version = "0.17", optional = true }
+# Noise protocol (mandatory - pure Rust, zero C dependencies, zigbuild friendly)
+snowstorm = { version = "0.4", features = ["stream"], default-features = false }
+base64 = "0.22"
 
-# TLS with native-tls (optional)
-tokio-native-tls = { version = "0.3", optional = true }
-openssl = { version = "0.10", optional = true }
-
-# Optional Noise
-snowstorm = { version = "0.4", optional = true, features = ["stream"], default-features = false }
-base64 = { version = "0.22", optional = true }
-
-# Optional WebSocket
-tokio-tungstenite = { version = "0.24", optional = true }
-tokio-util = { version = "0.7", optional = true, features = ["io"] }
-futures-core = { version = "0.3", optional = true }
-futures-sink = { version = "0.3", optional = true }
-
-# Optional SSH server (russh)
-russh = { version = "0.57", optional = true }
+# Optional SSH server (russh) - using ring backend instead of aws-lc-rs for zigbuild cross-compilation
+russh = { version = "0.57", optional = true, default-features = false, features = ["ring"] }
 ssh-key = { version = "0.6", optional = true, features = ["ed25519", "rsa", "std"] }
 rand = { version = "0.8", optional = true }
 portable-pty = { version = "0.8", optional = true }

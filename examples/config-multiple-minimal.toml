@@ -4,6 +4,13 @@
 [client]
 remote_addr = "rathole.example.com:2333"
 
+# Uncomment to use Noise protocol encryption:
+# [client.transport]
+# type = "noise"
+#
+# [client.transport.noise]
+# remote_public_key = "base64-encoded-server-public-key"
+
 # SOCKS5 service
 [[client.services]]
 name = "socks5"

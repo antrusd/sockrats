@@ -8,9 +8,7 @@ mod transport;
 
 pub use client::{ClientConfig, Config, ServiceConfig, ServiceListExt, ServiceType, SocksConfig};
 pub use pool::PoolConfig;
-pub use transport::{
-    NoiseConfig, TcpConfig, TlsConfig, TransportConfig, TransportType, WebsocketConfig,
-};
+pub use transport::{NoiseConfig, TcpConfig, TransportConfig, TransportType};
 
 use anyhow::{Context, Result};
 use std::path::Path;

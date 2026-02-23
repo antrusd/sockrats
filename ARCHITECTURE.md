@@ -11,7 +11,7 @@ Sockrats is a Rust-based reverse tunneling client that connects to a [rathole](h
 - **Embedded SSH Server**: Feature-gated SSH server via `russh` with PTY support via `portable-pty`
 - **Multi-Service Architecture**: Run multiple services (SOCKS5, SSH) simultaneously on different rathole service names
 - **No Local Listeners**: All servers operate purely in-memory on tunnel data channel streams
-- **Multiple Transport Options**: TCP, TLS (rustls), Noise protocol
+- **Encrypted Transport**: Noise protocol (mandatory, pure Rust, zero C dependencies) + plain TCP
 - **Connection Pooling**: Pre-established data channel pool for improved performance
 - **Cross-Platform**: Linux, macOS, Windows with static builds via Docker
 
@@ -148,7 +148,7 @@ sockrats/
 │   ├── config/                        # Configuration module
 │   │   ├── mod.rs                     # load_config(), parse_config()
 │   │   ├── client.rs                  # Config, ClientConfig, ServiceConfig, SocksConfig, ServiceType
-│   │   ├── transport.rs               # TransportType, TransportConfig, TlsConfig, NoiseConfig, etc.
+│   │   ├── transport.rs               # TransportType, TransportConfig, TcpConfig, NoiseConfig
 │   │   └── pool.rs                    # PoolConfig with validation
 │   │
 │   ├── protocol/                      # Rathole wire protocol
@@ -161,8 +161,7 @@ sockrats/
 │   │   ├── mod.rs                     # Transport trait, TransportDyn/StreamDyn, create_transport()
 │   │   ├── addr.rs                    # AddrMaybeCached with DNS caching
 │   │   ├── tcp.rs                     # TcpTransport
-│   │   ├── tls.rs                     # TlsTransport (rustls with NoVerifier for skip_verify)
-│   │   └── noise.rs                   # NoiseTransport (snowstorm)
+│   │   └── noise.rs                   # NoiseTransport (snowstorm, mandatory)
 │   │
 │   ├── client/                        # Client logic
 │   │   ├── mod.rs                     # run_client() - transport selection entry point
@@ -240,38 +239,45 @@ sockrats/
 
 ### Makefile
 
-The project uses a `Makefile` with Docker-based cross-compilation targets:
+The project uses a `Makefile` with Docker-based cross-compilation targets. All cross-compilation uses `cargo-zigbuild` via the `ghcr.io/rust-cross/cargo-zigbuild:0.21.4` Docker image. No OpenSSL or osxcross required — all transport dependencies are pure Rust.
 
 ```makefile
 # Makefile targets
-make build              # Build for current platform (cargo build --release)
-make test               # Run all tests (cargo test --all-features --verbose)
-make lint               # cargo fmt --check && cargo clippy
-make fmt                # cargo fmt
-make coverage           # cargo tarpaulin --out Html --fail-under 80
+make check              # Check compilation in Docker
+make test               # Run all tests in Docker
+make lint               # cargo fmt --check && cargo clippy in Docker
+make fmt                # cargo fmt in Docker
+make coverage           # cargo tarpaulin --out Html --fail-under 80 in Docker
 make clean              # Clean build artifacts and dist/
 
-# Docker targets (for reproducible builds)
-make build-docker       # Build in Docker (static with musl)
-make test-docker        # Run tests in Docker
-make coverage-docker    # Run coverage in Docker
-
-# Cross-compilation (all produce static binaries)
+# Cross-compilation (all produce static binaries via cargo-zigbuild)
 make build-linux-docker         # Linux x86_64 + ARM64 (musl static)
-make build-windows-docker       # Windows x86_64 (zigbuild)
-make build-macos-docker         # macOS Intel + Apple Silicon (osxcross)
-make build-all-docker           # All platforms
+make build-windows-docker       # Windows x86_64
+make build-macos-docker         # macOS Intel + Apple Silicon
+make build-all-docker           # All platforms (5 targets)
 make release-archives           # Create tar.gz/zip archives in dist/release/
 make targets                    # Show available targets
 ```
 
-**Build images:**
-- Linux/Windows: `rust:1.93.0-alpine3.23` (musl for static linking)
-- macOS: `rust:slim-trixie` (Debian with osxcross for macOS SDK)
+**Docker images:**
+- Standard builds (check, test, lint, fmt, coverage): `rust:1.93.0-alpine3.23`
+- Cross-compilation: `ghcr.io/rust-cross/cargo-zigbuild:0.21.4`
+
+**Supported targets (5):**
+
+| Platform       | Architecture     | Target Triple                  |
+|----------------|------------------|--------------------------------|
+| Linux (static) | x86_64           | `x86_64-unknown-linux-musl`    |
+| Linux (static) | ARM64            | `aarch64-unknown-linux-musl`   |
+| Windows        | x86_64           | `x86_64-pc-windows-gnu`        |
+| macOS          | x86_64 (Intel)   | `x86_64-apple-darwin`          |
+| macOS          | ARM64 (M1/M2/M3) | `aarch64-apple-darwin`         |
+
+> **Note:** `aarch64-pc-windows-gnu` is excluded because the stable Rust toolchain does not support this target.
 
 ### Cross.toml
 
-Configuration for the `cross` tool, defining per-target Docker images and pre-build steps:
+Configuration for the `cross` tool, kept for compatibility. Primary cross-compilation uses cargo-zigbuild (see Makefile). No OpenSSL pre-build commands needed — all dependencies are pure Rust (or handled by zigbuild for `ring`).
 
 ```toml
 [build.env]
@@ -279,11 +285,9 @@ passthrough = ["RUST_BACKTRACE", "RUST_LOG"]
 
 [target.x86_64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
-pre-build = ["apk add --no-cache openssl-dev openssl-libs-static"]
 
 [target.aarch64-unknown-linux-musl]
 image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
-pre-build = ["apk add --no-cache openssl-dev openssl-libs-static"]
 
 [target.x86_64-pc-windows-gnu]
 image = "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
@@ -299,26 +303,13 @@ edition = "2021"
 authors = ["Sockrats Contributors"]
 description = "Reverse SOCKS5 tunneling client using rathole protocol"
 license = "MIT"
+readme = "README.md"
+repository = "https://github.com/antrusd/sockrats"
+keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
+categories = ["network-programming", "command-line-utilities"]
 
 [features]
-default = ["rustls-tls", "noise", "ssh"]
-
-# TLS support using rustls (pure Rust, easy static linking)
-rustls-tls = ["tokio-rustls", "rustls-pemfile", "rustls-native-certs", "ring"]
-
-# TLS support using native-tls (requires OpenSSL)
-native-tls = ["tokio-native-tls"]
-native-tls-vendored = ["tokio-native-tls", "openssl-vendored"]
-
-# Vendored OpenSSL for static builds
-openssl-vendored = ["openssl/vendored"]
-
-# Noise protocol support
-noise = ["snowstorm", "base64"]
-
-# WebSocket support (config types exist, transport not yet implemented)
-websocket-rustls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "rustls-tls"]
-websocket-native-tls = ["tokio-tungstenite", "tokio-util", "futures-core", "futures-sink", "native-tls"]
+default = ["ssh"]
 
 # SSH server support
 ssh = ["russh", "ssh-key", "rand", "portable-pty"]
@@ -355,28 +346,12 @@ backoff = { version = "0.4", features = ["tokio"] }
 tokio-stream = "0.1"
 futures = "0.3"
 
-# TLS with rustls (default - pure Rust, easy static linking)
-tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
-rustls-native-certs = { version = "0.8", optional = true }
-rustls-pemfile = { version = "2.0", optional = true }
-ring = { version = "0.17", optional = true }
+# Noise protocol (mandatory - pure Rust, zero C dependencies, zigbuild friendly)
+snowstorm = { version = "0.4", features = ["stream"], default-features = false }
+base64 = "0.22"
 
-# TLS with native-tls (optional)
-tokio-native-tls = { version = "0.3", optional = true }
-openssl = { version = "0.10", optional = true }
-
-# Optional Noise
-snowstorm = { version = "0.4", optional = true, features = ["stream"], default-features = false }
-base64 = { version = "0.22", optional = true }
-
-# Optional WebSocket
-tokio-tungstenite = { version = "0.24", optional = true }
-tokio-util = { version = "0.7", optional = true, features = ["io"] }
-futures-core = { version = "0.3", optional = true }
-futures-sink = { version = "0.3", optional = true }
-
-# Optional SSH server (russh)
-russh = { version = "0.57", optional = true }
+# Optional SSH server (russh) - using ring backend instead of aws-lc-rs for zigbuild cross-compilation
+russh = { version = "0.57", optional = true, default-features = false, features = ["ring"] }
 ssh-key = { version = "0.6", optional = true, features = ["ed25519", "rsa", "std"] }
 rand = { version = "0.8", optional = true }
 portable-pty = { version = "0.8", optional = true }
@@ -390,6 +365,10 @@ url = { version = "2.2", features = ["serde"] }
 tokio-test = "0.4"
 env_logger = "0.11"
 tempfile = "3"
+
+[[bin]]
+name = "sockrats"
+path = "src/main.rs"
 
 [profile.release]
 lto = true
@@ -532,9 +511,7 @@ pub struct SocksConfig {
 #[serde(rename_all = "lowercase")]
 pub enum TransportType {
     Tcp,
-    Tls,
     Noise,
-    Websocket,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -543,23 +520,13 @@ pub struct TransportConfig {
     pub transport_type: TransportType,
     #[serde(default)]
     pub tcp: TcpConfig,
-    #[serde(default)]
-    pub tls: TlsConfig,
     pub noise: Option<NoiseConfig>,
-    #[serde(default)]
-    pub websocket: WebsocketConfig,
 }
 
 pub struct TcpConfig {
     pub nodelay: bool,                // default: true
     pub keepalive_secs: u64,          // default: 20
     pub keepalive_interval: u64,      // default: 8
-}
-
-pub struct TlsConfig {
-    pub hostname: Option<String>,
-    pub trusted_root: Option<String>,
-    pub skip_verify: bool,            // default: false
 }
 
 pub struct NoiseConfig {
@@ -696,9 +663,7 @@ pub trait StreamDyn: AsyncRead + AsyncWrite + Unpin + Send + Debug {}
 pub fn create_transport(config: &TransportConfig) -> Result<Box<dyn TransportDyn>> {
     match config.transport_type {
         TransportType::Tcp => Ok(Box::new(TcpTransport::new(config)?)),
-        TransportType::Tls => Ok(Box::new(TlsTransport::new(config)?)),
         TransportType::Noise => Ok(Box::new(NoiseTransport::new(config)?)),
-        TransportType::Websocket => anyhow::bail!("WebSocket transport not yet implemented"),
     }
 }
 ```
@@ -714,24 +679,6 @@ pub struct TcpTransport {
 impl Transport for TcpTransport {
     type Stream = TcpStream;
     // Connects with timeout, applies socket options
-}
-```
-
-#### TLS Transport (`src/transport/tls.rs`)
-
-Uses `tokio-rustls` (pure Rust TLS). Supports `skip_verify` via a `NoVerifier` implementation:
-
-```rust
-pub struct TlsTransport {
-    connector: TlsConnector,
-    hostname: String,
-    socket_opts: SocketOpts,
-    connect_timeout: Duration,
-}
-
-impl Transport for TlsTransport {
-    type Stream = TlsStream<TcpStream>;
-    // Creates TLS connection over TCP with optional certificate verification
 }
 ```
 
@@ -777,12 +724,13 @@ pub async fn run_client(config: Config, shutdown_rx: broadcast::Receiver<bool>) 
     let client_config = config.client;
     match client_config.transport.transport_type {
         TransportType::Tcp => {
-            let transport = TcpTransport::new(&client_config.transport)?;
-            Client::new(client_config).await?.run(shutdown_rx).await
+            let client = Client::<TcpTransport>::new(client_config).await?;
+            client.run(shutdown_rx).await
         }
-        TransportType::Tls => { /* Similar with TlsTransport */ }
-        TransportType::Noise => { /* Similar with NoiseTransport */ }
-        TransportType::Websocket => { anyhow::bail!("WebSocket transport not yet implemented") }
+        TransportType::Noise => {
+            let client = Client::<NoiseTransport>::new(client_config).await?;
+            client.run(shutdown_rx).await
+        }
     }
 }
 ```
@@ -1645,23 +1593,18 @@ token = "your-secret-token"
 heartbeat_timeout = 40
 
 [client.transport]
-type = "tcp"
+# Transport type: "tcp" or "noise"
+type = "noise"
 
 [client.transport.tcp]
 nodelay = true
 keepalive_secs = 20
 keepalive_interval = 8
 
-# TLS transport (uncomment to use)
-# [client.transport.tls]
-# hostname = "server.example.com"
-# trusted_root = "/path/to/ca.crt"
-# skip_verify = false
-
-# Noise transport (uncomment to use)
-# [client.transport.noise]
-# pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
-# remote_public_key = "base64-encoded-server-public-key"
+# Noise protocol options (required when type = "noise")
+[client.transport.noise]
+pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
+remote_public_key = "base64-encoded-server-public-key"
 # local_private_key = "base64-encoded-client-private-key"
 
 [client.socks]
@@ -1823,7 +1766,7 @@ DataChannelArgs::new(config, transport, session_key, self.handler.clone())
 
 ### General Security
 
-- All transport options (TLS, Noise) provide encrypted communication
+- Noise protocol provides encrypted transport (pure Rust, zero C dependencies)
 - Token-based authentication with nonce prevents replay attacks
 - SHA-256 digest for service name and authentication
 - Release builds strip symbols and use LTO
@@ -1873,7 +1816,6 @@ Located in `tests/`:
 
 ## Future Enhancements
 
-- WebSocket transport implementation (config types already defined)
 - SFTP subsystem support
 - TCP/IP forwarding (direct-tcpip channels)
 - X11 forwarding

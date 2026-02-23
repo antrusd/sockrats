@@ -1,6 +1,6 @@
 //! Transport configuration types
 //!
-//! Defines configuration for different transport protocols (TCP, TLS, Noise, WebSocket).
+//! Defines configuration for different transport protocols (TCP, Noise).
 
 use serde::{Deserialize, Serialize};
 
@@ -11,15 +11,9 @@ pub enum TransportType {
     #[default]
     #[serde(rename = "tcp")]
     Tcp,
-    /// TLS encrypted transport
-    #[serde(rename = "tls")]
-    Tls,
     /// Noise protocol encrypted transport
     #[serde(rename = "noise")]
     Noise,
-    /// WebSocket transport
-    #[serde(rename = "websocket")]
-    Websocket,
 }
 
 /// Main transport configuration
@@ -33,17 +27,9 @@ pub struct TransportConfig {
     #[serde(default)]
     pub tcp: TcpConfig,
 
-    /// TLS configuration (optional)
-    #[serde(default)]
-    pub tls: Option<TlsConfig>,
-
     /// Noise protocol configuration (optional)
     #[serde(default)]
     pub noise: Option<NoiseConfig>,
-
-    /// WebSocket configuration (optional)
-    #[serde(default)]
-    pub websocket: Option<WebsocketConfig>,
 }
 
 /// Default keepalive seconds
@@ -82,20 +68,6 @@ impl Default for TcpConfig {
     }
 }
 
-/// TLS transport configuration
-#[derive(Debug, Default, Serialize, Deserialize, Clone)]
-pub struct TlsConfig {
-    /// Server hostname for verification
-    pub hostname: Option<String>,
-
-    /// Path to trusted root certificate
-    pub trusted_root: Option<String>,
-
-    /// Skip certificate verification (dangerous!)
-    #[serde(default)]
-    pub skip_verify: bool,
-}
-
 /// Noise protocol configuration
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NoiseConfig {
@@ -112,40 +84,6 @@ pub struct NoiseConfig {
 
 fn default_noise_pattern() -> String {
     "Noise_NK_25519_ChaChaPoly_BLAKE2s".to_string()
-}
-
-/// WebSocket transport configuration
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WebsocketConfig {
-    /// WebSocket URL path
-    #[serde(default = "default_ws_path")]
-    pub path: String,
-
-    /// Custom headers
-    #[serde(default)]
-    pub headers: Vec<(String, String)>,
-
-    /// Enable TLS for WebSocket (wss://)
-    #[serde(default)]
-    pub tls: bool,
-
-    /// TLS configuration if enabled
-    pub tls_config: Option<TlsConfig>,
-}
-
-fn default_ws_path() -> String {
-    "/".to_string()
-}
-
-impl Default for WebsocketConfig {
-    fn default() -> Self {
-        WebsocketConfig {
-            path: default_ws_path(),
-            headers: Vec::new(),
-            tls: false,
-            tls_config: None,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -166,28 +104,10 @@ mod tests {
     }
 
     #[test]
-    fn test_tls_config_default() {
-        let config = TlsConfig::default();
-        assert!(config.hostname.is_none());
-        assert!(config.trusted_root.is_none());
-        assert!(!config.skip_verify);
-    }
-
-    #[test]
-    fn test_websocket_config_default() {
-        let config = WebsocketConfig::default();
-        assert_eq!(config.path, "/");
-        assert!(config.headers.is_empty());
-        assert!(!config.tls);
-    }
-
-    #[test]
     fn test_transport_config_default() {
         let config = TransportConfig::default();
         assert_eq!(config.transport_type, TransportType::Tcp);
-        assert!(config.tls.is_none());
         assert!(config.noise.is_none());
-        assert!(config.websocket.is_none());
     }
 
     #[test]
