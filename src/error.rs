@@ -40,6 +40,11 @@ pub enum SockratsError {
     #[error("Pool error: {0}")]
     Pool(String),
 
+    /// WireGuard tunnel error
+    #[cfg(feature = "wireguard")]
+    #[error("WireGuard error: {0}")]
+    WireGuard(String),
+
     /// Timeout error
     #[error("Timeout: {0}")]
     Timeout(String),

@@ -1,0 +1,35 @@
+# Minimal Multi-Service Configuration with WireGuard Tunnel
+#
+# Demonstrates SOCKS5 and SSH services tunneled through WireGuard.
+# Transport type MUST be "tcp" — Noise is redundant with WireGuard encryption.
+# Requires: --features wireguard
+
+[client]
+remote_addr = "10.0.0.1:2333"
+
+# Transport must be TCP when WireGuard is enabled
+[client.transport]
+type = "tcp"
+
+# WireGuard tunnel — all traffic to remote_addr goes through this tunnel
+[client.wireguard]
+enabled = true
+private_key = "YNqHbfBQKaGvlC4Hw0URzIhpHP/6dFzjPKMzMFBjllQ="
+peer_public_key = "UtMCkMvRMmBDDwwOSAmDUCBfpBJQzMJCbCR7cjY3V0s="
+peer_endpoint = "wg-gateway.example.com:51820"
+address = "10.0.0.2/24"
+allowed_ips = ["10.0.0.0/24"]
+
+# SOCKS5 service
+[[client.services]]
+name = "socks5"
+token = "socks5-token"
+service_type = "socks5"
+
+# SSH service
+[[client.services]]
+name = "ssh"
+token = "ssh-token"
+service_type = "ssh"
+ssh.password = "ssh-password"
+ssh.authorized_keys = "/path/to/authorized_keys"

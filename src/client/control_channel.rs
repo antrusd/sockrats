@@ -216,6 +216,8 @@ mod tests {
             ssh: SshConfig::default(),
             pool: Default::default(),
             services: Vec::new(),
+            #[cfg(feature = "wireguard")]
+            wireguard: None,
         }
     }
 

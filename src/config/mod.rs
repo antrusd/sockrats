@@ -6,6 +6,8 @@ mod client;
 mod pool;
 mod transport;
 
+#[cfg(feature = "wireguard")]
+pub use crate::transport::wireguard::WireguardConfig;
 pub use client::{ClientConfig, Config, ServiceConfig, ServiceListExt, ServiceType, SocksConfig};
 pub use pool::PoolConfig;
 pub use transport::{NoiseConfig, TcpConfig, TransportConfig, TransportType};

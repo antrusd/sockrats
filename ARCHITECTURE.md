@@ -215,10 +215,11 @@ sockrats/
 │       ├── manager.rs                 # PoolManager, PoolStats, PoolStatsSnapshot
 │       └── tcp_pool.rs                # TcpChannelPool<T> - full pool with warm-up, maintenance
 │
-├── examples/                          # Example configurations
-│   ├── config.toml                    # Full configuration with all options documented
-│   ├── config-minimal.toml            # Minimal single-service configuration
-│   └── config-multiple-minimal.toml   # Minimal multi-service configuration
+├── examples/                                   # Example configurations
+│   ├── config.toml                             # Full configuration with all options documented
+│   ├── config-minimal.toml                     # Minimal single-service configuration
+│   ├── config-multiple-minimal.toml            # Minimal multi-service configuration
+│   └── config-multiple-minimal-wireguard.toml  # Minimal multi-service with WireGuard tunnel
 │
 ├── plans/                             # Architecture decision records
 │   └── services-refactoring.md        # Services refactoring plan and design
@@ -698,6 +699,78 @@ impl Transport for NoiseTransport {
     // Creates Noise-encrypted connection over TCP
 }
 ```
+
+#### WireGuard Tunnel (`src/transport/wireguard/`) — Optional
+
+Feature-gated behind `--features wireguard`. Uses `boringtun` 0.7 for WireGuard
+encryption and `smoltcp` 0.12 for a userspace virtual TCP/IP stack. No TUN/TAP
+device is created — all packet processing is in memory.
+
+**Architecture:**
+
+```text
+Application ──TCP──► smoltcp ──IP pkts──► boringtun ──UDP──► WG peer
+```
+
+WireGuard is a **separate tunnel layer**, not a transport type. When enabled at
+`[client.wireguard]`, transport type MUST be `"tcp"` (Noise is redundant since
+WireGuard already provides encryption). If transport is `"noise"` and WireGuard
+is enabled, sockrats will error and refuse to run.
+
+**Modules:**
+
+| File            | Purpose                                                                     |
+|-----------------|-----------------------------------------------------------------------------|
+| `config.rs`     | `WireguardConfig` struct, validation, key parsing                           |
+| `device.rs`     | `VirtualDevice` implementing smoltcp `Device` trait with in-memory queues   |
+| `tunnel.rs`     | `TunnelHandle` wrapping `boringtun::noise::Tunn` with pre-allocated buffers |
+| `stack.rs`      | `VirtualStack` managing smoltcp `Interface` + `SocketSet` for virtual TCP   |
+| `stream.rs`     | `WireguardStream` implementing `AsyncRead + AsyncWrite` via channels        |
+| `event_loop.rs` | `WgEventLoop` background task coordinating UDP, boringtun, and smoltcp      |
+| `mod.rs`        | `WireguardTransport` implementing the `Transport` trait                     |
+
+**Key types:**
+
+```rust
+// config.rs — TOML-deserializable config at [client.wireguard]
+pub struct WireguardConfig {
+    pub enabled: bool,
+    pub private_key: String,      // base64, 32 bytes
+    pub peer_public_key: String,  // base64, 32 bytes
+    pub preshared_key: Option<String>,
+    pub peer_endpoint: String,    // host:port (UDP)
+    pub persistent_keepalive: u16,
+    pub address: String,          // CIDR notation, default "10.0.0.2/24"
+    pub allowed_ips: Vec<String>, // CIDR notation
+}
+
+// mod.rs — Transport implementation
+pub struct WireguardTransport {
+    event_loop: Arc<WgEventLoop>,
+    connect_timeout: Duration,
+}
+
+impl Transport for WireguardTransport {
+    type Stream = WireguardStream;
+    // Each connect() creates a virtual TCP connection inside the WG tunnel
+}
+```
+
+**Packet flow (outbound):**
+1. Application writes to `WireguardStream`
+2. Stream sends `StreamMessage::Data` via channel to event loop
+3. Event loop writes data into smoltcp TCP socket buffer
+4. smoltcp `poll()` produces IP packets into `VirtualDevice` TX queue
+5. Event loop encrypts IP packets with `boringtun::Tunn::encapsulate()`
+6. Encrypted WireGuard packets sent via real UDP socket to peer
+
+**Packet flow (inbound):**
+1. UDP socket receives encrypted datagram from WG peer
+2. Event loop decrypts with `boringtun::Tunn::decapsulate()`
+3. Decrypted IP packets injected into `VirtualDevice` RX queue
+4. smoltcp `poll()` processes packets into TCP socket buffers
+5. Event loop reads from smoltcp TCP recv buffer
+6. Data sent to `WireguardStream` via channel → application reads
 
 #### Address Caching (`src/transport/addr.rs`)
 
@@ -1655,6 +1728,35 @@ token = "socks5-token"
 service_type = "socks5"
 
 # SSH service
+[[client.services]]
+name = "ssh"
+token = "ssh-token"
+service_type = "ssh"
+ssh.password = "ssh-password"
+ssh.authorized_keys = "/path/to/authorized_keys"
+```
+
+```toml
+# examples/config-multiple-minimal-wireguard.toml
+[client]
+remote_addr = "10.0.0.1:2333"
+
+[client.transport]
+type = "tcp"
+
+[client.wireguard]
+enabled = true
+private_key = "YNqHbfBQKaGvlC4Hw0URzIhpHP/6dFzjPKMzMFBjllQ="
+peer_public_key = "UtMCkMvRMmBDDwwOSAmDUCBfpBJQzMJCbCR7cjY3V0s="
+peer_endpoint = "wg-gateway.example.com:51820"
+address = "10.0.0.2/24"
+allowed_ips = ["10.0.0.0/24"]
+
+[[client.services]]
+name = "socks5"
+token = "socks5-token"
+service_type = "socks5"
+
 [[client.services]]
 name = "ssh"
 token = "ssh-token"

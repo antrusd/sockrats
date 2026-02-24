@@ -99,6 +99,28 @@ request_timeout = 10
 # # Connection timeout in seconds (default: 300)
 # connection_timeout = 300
 
+# WireGuard tunnel configuration (optional, requires --features wireguard)
+# When enabled, transport type MUST be "tcp" (Noise is redundant with WG encryption)
+# sockrats creates a WireGuard tunnel to the peer, then establishes virtual TCP
+# connections to the rathole server through that tunnel.
+# No TUN/TAP device is created — all processing is in userspace.
+#
+# [client.wireguard]
+# enabled = true
+# # WireGuard keys (base64 encoded, 32 bytes each)
+# private_key = "YNqHbfBQKaGvlC4Hw0URzIhpHP/6dFzjPKMzMFBjllQ="
+# peer_public_key = "UtMCkMvRMmBDDwwOSAmDUCBfpBJQzMJCbCR7cjY3V0s="
+# # Optional preshared key for post-quantum resistance
+# # preshared_key = "base64-encoded-preshared-key"
+# # Real network endpoint of the WireGuard peer (UDP)
+# peer_endpoint = "wg-gateway.example.com:51820"
+# # Persistent keepalive in seconds (0 = disabled, default: 25)
+# persistent_keepalive = 25
+# # Client address in CIDR notation (like WireGuard [Interface] Address)
+# address = "10.0.0.2/24"
+# # Allowed IP ranges (CIDR notation)
+# allowed_ips = ["10.0.0.0/24"]
+
 # Connection pool configuration
 [client.pool]
 # Minimum number of pre-established TCP channels (default: 2)

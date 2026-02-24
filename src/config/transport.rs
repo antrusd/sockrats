@@ -2,6 +2,8 @@
 //!
 //! Defines configuration for different transport protocols (TCP, Noise).
 
+#[cfg(feature = "wireguard")]
+use crate::transport::wireguard::WireguardConfig;
 use serde::{Deserialize, Serialize};
 
 /// Transport type enumeration
@@ -30,6 +32,16 @@ pub struct TransportConfig {
     /// Noise protocol configuration (optional)
     #[serde(default)]
     pub noise: Option<NoiseConfig>,
+
+    /// WireGuard tunnel configuration.
+    ///
+    /// This field is NOT deserialized from TOML — it lives at
+    /// `[client.wireguard]` on [`ClientConfig`] and is copied here
+    /// programmatically in `run_client()` so that `Transport::new()`
+    /// can access it.
+    #[cfg(feature = "wireguard")]
+    #[serde(skip)]
+    pub wireguard: Option<WireguardConfig>,
 }
 
 /// Default keepalive seconds

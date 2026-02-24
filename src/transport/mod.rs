@@ -6,10 +6,14 @@
 mod addr;
 mod noise;
 mod tcp;
+#[cfg(feature = "wireguard")]
+pub mod wireguard;
 
 pub use addr::AddrMaybeCached;
 pub use noise::NoiseTransport;
 pub use tcp::TcpTransport;
+#[cfg(feature = "wireguard")]
+pub use wireguard::WireguardTransport;
 
 use crate::config::{TcpConfig, TransportConfig, TransportType};
 use anyhow::Result;

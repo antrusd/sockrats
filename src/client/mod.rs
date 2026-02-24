@@ -13,15 +13,37 @@ pub use control_channel::ControlChannel;
 pub use data_channel::run_data_channel;
 
 use crate::config::Config;
+#[cfg(feature = "wireguard")]
+use crate::transport::WireguardTransport;
 use crate::transport::{NoiseTransport, TcpTransport};
 use anyhow::Result;
 use tokio::sync::broadcast;
 
 /// Run the client with the given configuration
 pub async fn run_client(config: Config, shutdown_rx: broadcast::Receiver<bool>) -> Result<()> {
-    let client_config = config.client;
+    let mut client_config = config.client;
 
-    // Select transport based on configuration
+    // Check WireGuard tunnel (separate layer, not a transport type)
+    #[cfg(feature = "wireguard")]
+    if client_config.wireguard_enabled() {
+        // Validate: WireGuard requires transport type = tcp
+        if client_config.transport.transport_type != crate::config::TransportType::Tcp {
+            anyhow::bail!(
+                "WireGuard tunnel requires transport type 'tcp', got '{:?}'. \
+                 Noise encryption is redundant when using WireGuard.",
+                client_config.transport.transport_type
+            );
+        }
+
+        // Copy the WireGuard config into TransportConfig so that
+        // Transport::new() can access it.
+        client_config.transport.wireguard = client_config.wireguard.clone();
+
+        let client = Client::<WireguardTransport>::new(client_config).await?;
+        return client.run(shutdown_rx).await;
+    }
+
+    // Existing transport selection (unchanged when WireGuard disabled)
     match client_config.transport.transport_type {
         crate::config::TransportType::Tcp => {
             let client = Client::<TcpTransport>::new(client_config).await?;

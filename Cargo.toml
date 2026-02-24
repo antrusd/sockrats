@@ -11,10 +11,13 @@ keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
 categories = ["network-programming", "command-line-utilities"]
 
 [features]
-default = ["ssh"]
+default = ["ssh", "wireguard"]
 
 # SSH server support
 ssh = ["russh", "ssh-key", "rand", "portable-pty"]
+
+# WireGuard tunnel support (userspace, no TUN/TAP)
+wireguard = ["boringtun", "smoltcp", "x25519-dalek"]
 
 [dependencies]
 # Async runtime
@@ -57,6 +60,13 @@ russh = { version = "0.57", optional = true, default-features = false, features 
 ssh-key = { version = "0.6", optional = true, features = ["ed25519", "rsa", "std"] }
 rand = { version = "0.8", optional = true }
 portable-pty = { version = "0.8", optional = true }
+
+# Optional WireGuard tunnel (userspace, no TUN/TAP, pure Rust via boringtun + smoltcp)
+boringtun = { version = "0.7", optional = true, default-features = false }
+smoltcp = { version = "0.12", optional = true, default-features = false, features = [
+    "medium-ip", "proto-ipv4", "socket-tcp", "std",
+] }
+x25519-dalek = { version = "2", optional = true, features = ["static_secrets"] }
 
 # Proxy support for outbound connections
 async-http-proxy = { version = "1.2", features = ["runtime-tokio", "basic-auth"] }

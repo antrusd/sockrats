@@ -4,6 +4,8 @@
 
 use super::{PoolConfig, TransportConfig};
 use crate::services::ssh::SshConfig;
+#[cfg(feature = "wireguard")]
+use crate::transport::wireguard::WireguardConfig;
 use serde::{Deserialize, Serialize};
 
 /// Default heartbeat timeout in seconds
@@ -116,9 +118,21 @@ pub struct ClientConfig {
     /// Multi-service configuration (array of services)
     #[serde(default)]
     pub services: Vec<ServiceConfig>,
+
+    /// WireGuard tunnel configuration (optional, separate layer).
+    /// When `enabled = true`, transport type MUST be `"tcp"`.
+    #[cfg(feature = "wireguard")]
+    #[serde(default)]
+    pub wireguard: Option<WireguardConfig>,
 }
 
 impl ClientConfig {
+    /// Check if WireGuard tunnel is enabled in config.
+    #[cfg(feature = "wireguard")]
+    pub fn wireguard_enabled(&self) -> bool {
+        self.wireguard.as_ref().is_some_and(|wg| wg.enabled)
+    }
+
     /// Check if using multi-service mode
     pub fn is_multi_service(&self) -> bool {
         !self.services.is_empty()
