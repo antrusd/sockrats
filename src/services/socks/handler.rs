@@ -12,7 +12,6 @@ use crate::services::socks::tcp_relay::handle_tcp_connect;
 use crate::services::socks::types::SocksCommand;
 use crate::services::socks::udp::handle_udp_associate;
 use anyhow::{Context, Result};
-use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{debug, info, warn};
 
@@ -76,23 +75,6 @@ where
     }
 
     Ok(())
-}
-
-/// Handle SOCKS5 with timeout
-///
-/// Wraps handle_socks5_on_stream with a timeout for the initial handshake.
-#[allow(dead_code)]
-pub async fn handle_socks5_with_timeout<S>(
-    stream: S,
-    config: &SocksConfig,
-    timeout: Duration,
-) -> Result<()>
-where
-    S: AsyncRead + AsyncWrite + Unpin + Send,
-{
-    tokio::time::timeout(timeout, handle_socks5_on_stream(stream, config))
-        .await
-        .with_context(|| "SOCKS5 handshake timeout")?
 }
 
 #[cfg(test)]

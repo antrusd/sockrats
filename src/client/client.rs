@@ -132,18 +132,6 @@ impl<T: Transport + 'static> Client<T> {
 
         config
     }
-
-    /// Get a reference to the transport
-    #[allow(dead_code)]
-    pub fn transport(&self) -> &Arc<T> {
-        &self.transport
-    }
-
-    /// Get a reference to the configuration
-    #[allow(dead_code)]
-    pub fn config(&self) -> &ClientConfig {
-        &self.config
-    }
 }
 
 #[cfg(test)]

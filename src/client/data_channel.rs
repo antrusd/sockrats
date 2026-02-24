@@ -64,49 +64,6 @@ pub async fn run_data_channel<T: Transport>(
     Ok(())
 }
 
-/// Data channel arguments for spawning
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct DataChannelArgs<T: Transport> {
-    /// Transport for connections
-    pub transport: Arc<T>,
-    /// Remote server address
-    pub remote_addr: AddrMaybeCached,
-    /// Session key for authentication
-    pub session_key: Digest,
-    /// Service handler
-    pub handler: Arc<dyn ServiceHandler>,
-}
-
-#[allow(dead_code)]
-impl<T: Transport> DataChannelArgs<T> {
-    /// Create new data channel arguments
-    pub fn new(
-        transport: Arc<T>,
-        remote_addr: AddrMaybeCached,
-        session_key: Digest,
-        handler: Arc<dyn ServiceHandler>,
-    ) -> Self {
-        DataChannelArgs {
-            transport,
-            remote_addr,
-            session_key,
-            handler,
-        }
-    }
-
-    /// Run the data channel with these arguments
-    pub async fn run(self) -> Result<()> {
-        run_data_channel(
-            self.transport,
-            self.remote_addr,
-            self.session_key,
-            self.handler,
-        )
-        .await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::services::{ServiceHandler, StreamDyn};
