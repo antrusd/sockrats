@@ -1,13 +1,9 @@
 .PHONY: all test coverage lint clean fmt check \
         build-linux-docker build-windows-docker build-macos-docker
 
-export DOCKER_HOST := unix:///run/user/1000/docker.sock
+export DOCKER_HOST := unix:///run/user/$(shell id -u)/docker.sock
 
-# Docker images:
-# - rust:1.93.0-alpine3.23 for standard non-cross builds (native musl)
-# - ghcr.io/rust-cross/cargo-zigbuild:0.21.4 for all cross-compilation targets
-DOCKER_IMAGE := rust:1.93.0-alpine3.23
-DOCKER_IMAGE_ZIGBUILD := ghcr.io/rust-cross/cargo-zigbuild:0.21.4
+IMG_NAME := cargo-zigbuild:0.21.4
 APP_NAME := sockrats
 
 # All targets - cross-compilation targets use zigbuild
@@ -22,41 +18,41 @@ all: lint test
 check:
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
 		cargo check --all-features
 
 # Run tests
 test:
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
 		cargo test --all-features
 
 # Run coverage
 coverage:
 	docker run --network host --rm --privileged --security-opt seccomp=unconfined \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "cargo install cargo-tarpaulin && cargo tarpaulin --out Html --fail-under 80"
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo tarpaulin --out Html --fail-under 80
 
 # Lint
 lint:
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "rustup component add rustfmt clippy && cargo fmt -- --check && cargo clippy --all-features -- -D warnings"
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		sh -c "cargo fmt -- --check && cargo clippy --all-features -- -D warnings"
 
 # Format code
 fmt:
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) \
-		sh -c "rustup component add rustfmt && cargo fmt"
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo fmt
 
 # Clean build artifacts
 clean:
 	type cargo >/dev/null && cargo clean || docker run --rm \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE) cargo clean
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) cargo clean
 	rm -rf target/
 	rm -rf dist/
 
@@ -72,11 +68,9 @@ build-linux-x86_64-docker:
 	@mkdir -p dist/x86_64-unknown-linux-musl
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_ZIGBUILD) \
-		sh -c 'set -e && \
-			rustup target add x86_64-unknown-linux-musl && \
-			cargo zigbuild --release --target x86_64-unknown-linux-musl && \
-			cp target/x86_64-unknown-linux-musl/release/$(APP_NAME) /app/dist/x86_64-unknown-linux-musl/'
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo zigbuild --release --target x86_64-unknown-linux-musl
+	cp target/x86_64-unknown-linux-musl/release/$(APP_NAME) dist/x86_64-unknown-linux-musl/
 	@echo "Built: dist/x86_64-unknown-linux-musl/$(APP_NAME) (static)"
 
 # Build for Linux ARM64 (static with musl)
@@ -85,11 +79,9 @@ build-linux-aarch64-docker:
 	@mkdir -p dist/aarch64-unknown-linux-musl
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_ZIGBUILD) \
-		sh -c 'set -e && \
-			rustup target add aarch64-unknown-linux-musl && \
-			cargo zigbuild --release --target aarch64-unknown-linux-musl && \
-			cp target/aarch64-unknown-linux-musl/release/$(APP_NAME) /app/dist/aarch64-unknown-linux-musl/'
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo zigbuild --release --target aarch64-unknown-linux-musl
+	cp target/aarch64-unknown-linux-musl/release/$(APP_NAME) dist/aarch64-unknown-linux-musl/
 	@echo "Built: dist/aarch64-unknown-linux-musl/$(APP_NAME) (static)"
 
 # Build all Linux targets
@@ -102,11 +94,9 @@ build-windows-x86_64-docker:
 	@mkdir -p dist/x86_64-pc-windows-gnu
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_ZIGBUILD) \
-		sh -c 'set -e && \
-			rustup target add x86_64-pc-windows-gnu && \
-			cargo zigbuild --release --target x86_64-pc-windows-gnu && \
-			cp target/x86_64-pc-windows-gnu/release/$(APP_NAME).exe /app/dist/x86_64-pc-windows-gnu/'
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo zigbuild --release --target x86_64-pc-windows-gnu
+	cp target/x86_64-pc-windows-gnu/release/$(APP_NAME).exe dist/x86_64-pc-windows-gnu/
 	@echo "Built: dist/x86_64-pc-windows-gnu/$(APP_NAME).exe (static)"
 
 # Build all Windows targets
@@ -119,11 +109,9 @@ build-macos-x86_64-docker:
 	@mkdir -p dist/x86_64-apple-darwin
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_ZIGBUILD) \
-		sh -c 'set -e && \
-			rustup target add x86_64-apple-darwin && \
-			cargo zigbuild --release --target x86_64-apple-darwin && \
-			cp target/x86_64-apple-darwin/release/$(APP_NAME) /app/dist/x86_64-apple-darwin/'
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo zigbuild --release --target x86_64-apple-darwin
+	cp target/x86_64-apple-darwin/release/$(APP_NAME) dist/x86_64-apple-darwin/
 	@echo "Built: dist/x86_64-apple-darwin/$(APP_NAME)"
 
 # Build for macOS ARM64 (Apple Silicon M1/M2/M3)
@@ -132,11 +120,9 @@ build-macos-aarch64-docker:
 	@mkdir -p dist/aarch64-apple-darwin
 	docker run --network host --rm \
 		-v $${HOME}/Workspaces/cargo/registry:/usr/local/cargo/registry \
-		-v "$$(pwd)":/app -w /app $(DOCKER_IMAGE_ZIGBUILD) \
-		sh -c 'set -e && \
-			rustup target add aarch64-apple-darwin && \
-			cargo zigbuild --release --target aarch64-apple-darwin && \
-			cp target/aarch64-apple-darwin/release/$(APP_NAME) /app/dist/aarch64-apple-darwin/'
+		-v "$$(pwd)":/app -w /app $(IMG_NAME) \
+		cargo zigbuild --release --target aarch64-apple-darwin
+	cp target/aarch64-apple-darwin/release/$(APP_NAME) dist/aarch64-apple-darwin/
 	@echo "Built: dist/aarch64-apple-darwin/$(APP_NAME)"
 
 # Build all macOS targets
