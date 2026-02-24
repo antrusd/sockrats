@@ -4,8 +4,7 @@
 //! and relaying data bidirectionally.
 
 use crate::config::SocksConfig;
-use crate::services::socks::command::build_reply;
-use crate::services::socks::consts::*;
+use crate::services::socks::command::{send_io_error, send_success};
 use crate::services::socks::types::TargetAddr;
 use anyhow::{Context, Result};
 use std::time::Duration;
@@ -49,13 +48,14 @@ where
         Ok(Ok(stream)) => stream,
         Ok(Err(e)) => {
             error!("Failed to connect to {}: {}", socket_addr, e);
-            let reply_code = io_error_to_reply_code(&e);
-            build_reply(&mut client_stream, reply_code, None).await?;
+            send_io_error(&mut client_stream, &e).await?;
             return Err(e.into());
         }
         Err(_) => {
             error!("Connection timeout to {}", socket_addr);
-            build_reply(&mut client_stream, SOCKS5_REPLY_HOST_UNREACHABLE, None).await?;
+            let timeout_err =
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "Connection timeout");
+            send_io_error(&mut client_stream, &timeout_err).await?;
             anyhow::bail!("Connection timeout");
         }
     };
@@ -64,7 +64,7 @@ where
     let local_addr = target_stream.local_addr().ok();
 
     // Send success reply
-    build_reply(&mut client_stream, SOCKS5_REPLY_SUCCEEDED, local_addr).await?;
+    send_success(&mut client_stream, local_addr).await?;
 
     info!("SOCKS5 tunnel established to {}", socket_addr);
 
@@ -105,72 +105,10 @@ where
     Ok(())
 }
 
-/// Convert IO error to SOCKS5 reply code
-fn io_error_to_reply_code(error: &std::io::Error) -> u8 {
-    match error.kind() {
-        std::io::ErrorKind::ConnectionRefused => SOCKS5_REPLY_CONNECTION_REFUSED,
-        std::io::ErrorKind::TimedOut => SOCKS5_REPLY_HOST_UNREACHABLE,
-        std::io::ErrorKind::AddrNotAvailable => SOCKS5_REPLY_HOST_UNREACHABLE,
-        std::io::ErrorKind::PermissionDenied => SOCKS5_REPLY_CONNECTION_NOT_ALLOWED,
-        _ => SOCKS5_REPLY_GENERAL_FAILURE,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io;
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
-
-    #[test]
-    fn test_io_error_to_reply_code() {
-        let cases = vec![
-            (
-                io::ErrorKind::ConnectionRefused,
-                SOCKS5_REPLY_CONNECTION_REFUSED,
-            ),
-            (io::ErrorKind::TimedOut, SOCKS5_REPLY_HOST_UNREACHABLE),
-            (
-                io::ErrorKind::AddrNotAvailable,
-                SOCKS5_REPLY_HOST_UNREACHABLE,
-            ),
-            (
-                io::ErrorKind::PermissionDenied,
-                SOCKS5_REPLY_CONNECTION_NOT_ALLOWED,
-            ),
-            (io::ErrorKind::Other, SOCKS5_REPLY_GENERAL_FAILURE),
-            (io::ErrorKind::NotFound, SOCKS5_REPLY_GENERAL_FAILURE),
-        ];
-
-        for (error_kind, expected_code) in cases {
-            let error = io::Error::new(error_kind, "test error");
-            assert_eq!(io_error_to_reply_code(&error), expected_code);
-        }
-    }
-
-    #[test]
-    fn test_io_error_to_reply_code_all_variants() {
-        assert_eq!(
-            io_error_to_reply_code(&io::Error::from(io::ErrorKind::ConnectionRefused)),
-            SOCKS5_REPLY_CONNECTION_REFUSED
-        );
-        assert_eq!(
-            io_error_to_reply_code(&io::Error::from(io::ErrorKind::TimedOut)),
-            SOCKS5_REPLY_HOST_UNREACHABLE
-        );
-        assert_eq!(
-            io_error_to_reply_code(&io::Error::from(io::ErrorKind::AddrNotAvailable)),
-            SOCKS5_REPLY_HOST_UNREACHABLE
-        );
-        assert_eq!(
-            io_error_to_reply_code(&io::Error::from(io::ErrorKind::PermissionDenied)),
-            SOCKS5_REPLY_CONNECTION_NOT_ALLOWED
-        );
-        assert_eq!(
-            io_error_to_reply_code(&io::Error::from(io::ErrorKind::WouldBlock)),
-            SOCKS5_REPLY_GENERAL_FAILURE
-        );
-    }
 
     #[tokio::test]
     async fn test_relay_tcp_echo() {

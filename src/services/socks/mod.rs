@@ -13,7 +13,10 @@ mod types;
 mod udp;
 
 pub use auth::{authenticate, AuthMethod};
-pub use command::{build_reply, parse_command};
+pub use command::{
+    build_reply, parse_command, send_command_not_supported, send_general_failure, send_io_error,
+    send_success,
+};
 pub use consts::*;
 pub use handler::handle_socks5_on_stream;
 pub use tcp_relay::relay_tcp;
@@ -56,10 +59,10 @@ impl ServiceHandler for Socks5ServiceHandler {
         handle_socks5_on_stream(stream, &self.config).await
     }
 
-    async fn handle_udp_stream(&self, _stream: Box<dyn StreamDyn>) -> Result<()> {
+    async fn handle_udp_stream(&self, stream: Box<dyn StreamDyn>) -> Result<()> {
         if self.config.allow_udp {
-            tracing::warn!("UDP ASSOCIATE via data channel not fully implemented");
-            Ok(())
+            let relay = UdpRelay::new();
+            relay.run(stream).await
         } else {
             anyhow::bail!("UDP not allowed by SOCKS5 configuration")
         }

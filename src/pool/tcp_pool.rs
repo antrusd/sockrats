@@ -202,10 +202,11 @@ impl<T: Transport + 'static> TcpChannelPool<T> {
                     self.manager.stats().set_pooled_count(channels.len());
                     self.manager.stats().record_acquired();
 
+                    let is_tcp = channel.is_tcp();
                     return Ok(PooledChannelGuard::new(
                         channel.into_stream(),
                         self.return_tx.clone(),
-                        true,
+                        is_tcp,
                     ));
                 }
             }
@@ -242,7 +243,12 @@ impl<T: Transport + 'static> TcpChannelPool<T> {
             let mut channels = self.channels.lock().await;
 
             if channels.len() < self.config.max_tcp_channels {
-                channels.push_back(PooledChannel::new_tcp(returned.stream));
+                let channel = if returned.is_tcp {
+                    PooledChannel::new_tcp(returned.stream)
+                } else {
+                    PooledChannel::new_udp(returned.stream)
+                };
+                channels.push_back(channel);
                 self.manager.stats().record_returned();
                 self.manager.stats().set_pooled_count(channels.len());
                 self.available_notify.notify_one();

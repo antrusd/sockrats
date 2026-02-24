@@ -19,7 +19,6 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 /// | 2  |  1   |  1   | Variable |    2     | Variable |
 /// +----+------+------+----------+----------+----------+
 /// ```
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct UdpPacket {
     /// Fragment number (0 for standalone packets)
@@ -30,7 +29,6 @@ pub struct UdpPacket {
     pub data: Bytes,
 }
 
-#[allow(dead_code)]
 impl UdpPacket {
     /// Create a new UDP packet
     pub fn new(addr: TargetAddr, data: Bytes) -> Self {
@@ -41,7 +39,8 @@ impl UdpPacket {
         }
     }
 
-    /// Create a new fragmented UDP packet
+    /// Create a new fragmented UDP packet (test-only: fragmented packets are dropped)
+    #[cfg(test)]
     pub fn with_frag(frag: u8, addr: TargetAddr, data: Bytes) -> Self {
         UdpPacket { frag, addr, data }
     }
@@ -61,7 +60,6 @@ impl UdpPacket {
 /// # Returns
 ///
 /// Parsed UdpPacket if successful
-#[allow(dead_code)]
 pub fn parse_udp_packet(data: &[u8]) -> Result<UdpPacket> {
     if data.len() < 4 {
         bail!("UDP packet too short: {} bytes", data.len());
@@ -145,7 +143,6 @@ fn parse_address_from_buf(atyp: u8, mut buf: &[u8]) -> Result<(TargetAddr, &[u8]
 /// # Returns
 ///
 /// Encoded bytes
-#[allow(dead_code)]
 pub fn encode_udp_packet(packet: &UdpPacket) -> Vec<u8> {
     let mut buf = BytesMut::new();
 

@@ -58,7 +58,6 @@ where
 }
 
 /// Build a success reply
-#[allow(dead_code)]
 pub async fn send_success<S>(stream: &mut S, bind_addr: Option<SocketAddr>) -> Result<()>
 where
     S: AsyncWrite + Unpin,
@@ -67,7 +66,6 @@ where
 }
 
 /// Build an error reply from an IO error
-#[allow(dead_code)]
 pub async fn send_io_error<S>(stream: &mut S, error: &std::io::Error) -> Result<()>
 where
     S: AsyncWrite + Unpin,
@@ -76,6 +74,7 @@ where
         std::io::ErrorKind::ConnectionRefused => SOCKS5_REPLY_CONNECTION_REFUSED,
         std::io::ErrorKind::TimedOut => SOCKS5_REPLY_HOST_UNREACHABLE,
         std::io::ErrorKind::AddrNotAvailable => SOCKS5_REPLY_HOST_UNREACHABLE,
+        std::io::ErrorKind::PermissionDenied => SOCKS5_REPLY_CONNECTION_NOT_ALLOWED,
         _ => SOCKS5_REPLY_GENERAL_FAILURE,
     };
 
@@ -83,7 +82,6 @@ where
 }
 
 /// Build a "command not supported" reply
-#[allow(dead_code)]
 pub async fn send_command_not_supported<S>(stream: &mut S) -> Result<()>
 where
     S: AsyncWrite + Unpin,
@@ -92,7 +90,6 @@ where
 }
 
 /// Build a "general failure" reply
-#[allow(dead_code)]
 pub async fn send_general_failure<S>(stream: &mut S) -> Result<()>
 where
     S: AsyncWrite + Unpin,
@@ -193,5 +190,76 @@ mod tests {
         assert_eq!(buffer[0], SOCKS5_VERSION);
         assert_eq!(buffer[1], SOCKS5_REPLY_SUCCEEDED);
         assert_eq!(buffer[3], SOCKS5_ADDR_TYPE_IPV4);
+    }
+
+    #[tokio::test]
+    async fn test_send_success() {
+        let mut buffer = Vec::new();
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 9090);
+
+        send_success(&mut buffer, Some(addr)).await.unwrap();
+
+        assert_eq!(buffer[0], SOCKS5_VERSION);
+        assert_eq!(buffer[1], SOCKS5_REPLY_SUCCEEDED);
+        assert_eq!(buffer[3], SOCKS5_ADDR_TYPE_IPV4);
+        assert_eq!(&buffer[4..8], &[10, 0, 0, 1]);
+    }
+
+    #[tokio::test]
+    async fn test_send_io_error_connection_refused() {
+        let mut buffer = Vec::new();
+        let err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+
+        send_io_error(&mut buffer, &err).await.unwrap();
+
+        assert_eq!(buffer[1], SOCKS5_REPLY_CONNECTION_REFUSED);
+    }
+
+    #[tokio::test]
+    async fn test_send_io_error_timed_out() {
+        let mut buffer = Vec::new();
+        let err = std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout");
+
+        send_io_error(&mut buffer, &err).await.unwrap();
+
+        assert_eq!(buffer[1], SOCKS5_REPLY_HOST_UNREACHABLE);
+    }
+
+    #[tokio::test]
+    async fn test_send_io_error_permission_denied() {
+        let mut buffer = Vec::new();
+        let err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+
+        send_io_error(&mut buffer, &err).await.unwrap();
+
+        assert_eq!(buffer[1], SOCKS5_REPLY_CONNECTION_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn test_send_io_error_other() {
+        let mut buffer = Vec::new();
+        let err = std::io::Error::new(std::io::ErrorKind::Other, "other");
+
+        send_io_error(&mut buffer, &err).await.unwrap();
+
+        assert_eq!(buffer[1], SOCKS5_REPLY_GENERAL_FAILURE);
+    }
+
+    #[tokio::test]
+    async fn test_send_command_not_supported() {
+        let mut buffer = Vec::new();
+
+        send_command_not_supported(&mut buffer).await.unwrap();
+
+        assert_eq!(buffer[1], SOCKS5_REPLY_COMMAND_NOT_SUPPORTED);
+    }
+
+    #[tokio::test]
+    async fn test_send_general_failure() {
+        let mut buffer = Vec::new();
+
+        send_general_failure(&mut buffer).await.unwrap();
+
+        assert_eq!(buffer[1], SOCKS5_REPLY_GENERAL_FAILURE);
     }
 }

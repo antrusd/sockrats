@@ -14,7 +14,6 @@ pub struct PooledChannel<S> {
     /// When the channel was last used
     pub(crate) last_used: Instant,
     /// Whether this is a TCP or UDP channel
-    #[allow(dead_code)]
     pub(crate) is_tcp: bool,
 }
 
@@ -59,6 +58,11 @@ impl<S> PooledChannel<S> {
     /// Mark the channel as used
     pub fn touch(&mut self) {
         self.last_used = Instant::now();
+    }
+
+    /// Check if this is a TCP channel
+    pub fn is_tcp(&self) -> bool {
+        self.is_tcp
     }
 
     /// Get the underlying stream

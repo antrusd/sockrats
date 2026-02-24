@@ -6,4 +6,6 @@ mod parser;
 mod reply;
 
 pub use parser::parse_command;
-pub use reply::build_reply;
+pub use reply::{
+    build_reply, send_command_not_supported, send_general_failure, send_io_error, send_success,
+};

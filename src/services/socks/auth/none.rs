@@ -9,10 +9,8 @@ use tokio::io::{AsyncRead, AsyncWrite};
 ///
 /// This is a marker type for the no-authentication method.
 /// Since no authentication is required, this doesn't do anything.
-#[allow(dead_code)]
 pub struct NoAuth;
 
-#[allow(dead_code)]
 impl NoAuth {
     /// Perform "authentication" (which does nothing)
     pub async fn authenticate<S>(_stream: &mut S) -> Result<()>

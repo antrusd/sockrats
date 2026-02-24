@@ -6,8 +6,7 @@
 
 use crate::config::SocksConfig;
 use crate::services::socks::auth::authenticate;
-use crate::services::socks::command::{build_reply, parse_command};
-use crate::services::socks::consts::*;
+use crate::services::socks::command::{parse_command, send_command_not_supported};
 use crate::services::socks::tcp_relay::handle_tcp_connect;
 use crate::services::socks::types::SocksCommand;
 use crate::services::socks::udp::handle_udp_associate;
@@ -64,13 +63,13 @@ where
                 handle_udp_associate(stream, target_addr, config).await?;
             } else {
                 warn!("UDP ASSOCIATE not allowed by configuration");
-                build_reply(&mut stream, SOCKS5_REPLY_COMMAND_NOT_SUPPORTED, None).await?;
+                send_command_not_supported(&mut stream).await?;
             }
         }
         SocksCommand::Bind => {
             // BIND is not supported in reverse tunnel mode
             warn!("BIND command not supported");
-            build_reply(&mut stream, SOCKS5_REPLY_COMMAND_NOT_SUPPORTED, None).await?;
+            send_command_not_supported(&mut stream).await?;
         }
     }
 
@@ -80,6 +79,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::socks::consts::*;
 
     // Helper to create a mock SOCKS5 handshake
     fn create_socks5_handshake(auth_method: u8, command: u8, addr: &[u8]) -> Vec<u8> {

@@ -5,11 +5,6 @@
 mod none;
 mod password;
 
-#[allow(unused_imports)]
-pub use none::NoAuth;
-#[allow(unused_imports)]
-pub use password::PasswordAuth;
-
 use super::consts::*;
 use crate::config::SocksConfig;
 use anyhow::{bail, Result};
@@ -101,8 +96,13 @@ where
     };
 
     // Step 5: Perform authentication if required
-    if method == AuthMethod::Password {
-        password::authenticate_password(stream, config).await?;
+    match method {
+        AuthMethod::Password => {
+            password::authenticate_password(stream, config).await?;
+        }
+        AuthMethod::None => {
+            none::NoAuth::authenticate(stream).await?;
+        }
     }
 
     Ok(method)
