@@ -45,8 +45,12 @@ pub struct SshConfig {
     pub exec: bool,
 
     /// Enable SFTP subsystem
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub sftp: bool,
+
+    /// Path to sftp-server binary (for SFTP subsystem)
+    #[serde(default = "default_sftp_server")]
+    pub sftp_server: String,
 
     /// Enable PTY allocation
     #[serde(default = "default_true")]
@@ -112,6 +116,22 @@ fn default_shell() -> String {
     }
 }
 
+fn default_sftp_server() -> String {
+    // Common sftp-server paths on Linux/macOS
+    for path in &[
+        "/usr/lib/openssh/sftp-server",
+        "/usr/libexec/openssh/sftp-server",
+        "/usr/libexec/sftp-server",
+        "/usr/lib/ssh/sftp-server",
+    ] {
+        if std::path::Path::new(path).exists() {
+            return path.to_string();
+        }
+    }
+    // Fallback: assume it's on PATH or use internal-sftp convention
+    "/usr/lib/openssh/sftp-server".to_string()
+}
+
 impl Default for SshConfig {
     fn default() -> Self {
         Self {
@@ -124,7 +144,8 @@ impl Default for SshConfig {
             server_id: default_server_id(),
             shell: true,
             exec: true,
-            sftp: false,
+            sftp: true,
+            sftp_server: default_sftp_server(),
             pty: true,
             tcp_forwarding: false,
             x11_forwarding: false,
@@ -219,7 +240,8 @@ mod tests {
         assert!(config.has_password_auth());
         assert!(config.shell);
         assert!(config.exec);
-        assert!(!config.sftp);
+        assert!(config.sftp);
+        assert!(!config.sftp_server.is_empty());
         assert!(config.pty);
         assert_eq!(config.max_auth_tries, 6);
         assert_eq!(config.connection_timeout, 300);

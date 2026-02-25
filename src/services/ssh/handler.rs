@@ -267,7 +267,7 @@ impl Handler for SshHandler {
         Ok(())
     }
 
-    /// Handle exec request
+    /// Handle exec request (streaming I/O for SCP and interactive commands)
     async fn exec_request(
         &mut self,
         channel: ChannelId,
@@ -284,9 +284,6 @@ impl Handler for SshHandler {
         let channel_id: u32 = channel.into();
         tracing::info!(channel_id, command = %command, "Exec request");
 
-        // Acknowledge the request first
-        session.channel_success(channel)?;
-
         // Get environment variables for this channel
         let env_vars = {
             let state = self.session_state.lock().await;
@@ -296,38 +293,57 @@ impl Handler for SshHandler {
                 .unwrap_or_default()
         };
 
-        // Execute the command synchronously
+        // Spawn the command with streaming I/O (supports SCP bidirectional protocol)
         let shell = &self.config.default_shell;
-        let output = tokio::process::Command::new(shell)
-            .arg("-c")
-            .arg(&command)
-            .envs(env_vars.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-            .env("TERM", "xterm-256color")
-            .output()
-            .await;
+        match self
+            .shell_manager
+            .spawn_exec(channel_id, &command, shell, env_vars)
+            .await
+        {
+            Ok(()) => {
+                session.channel_success(channel)?;
 
-        match output {
-            Ok(output) => {
-                // Send stdout
-                if !output.stdout.is_empty() {
-                    session.data(channel, CryptoVec::from(output.stdout.as_slice()))?;
-                }
-                // Send stderr as extended data (type 1)
-                if !output.stderr.is_empty() {
-                    session.extended_data(channel, 1, CryptoVec::from(output.stderr.as_slice()))?;
-                }
-                // Send exit status
-                let exit_code = output.status.code().unwrap_or(1) as u32;
-                session.exit_status_request(channel, exit_code)?;
+                // Take the output and exit receivers
+                let output_rx = self.shell_manager.take_exec_output(channel_id).await;
+                let exit_rx = self.shell_manager.take_exec_exit(channel_id).await;
+
+                let handle = session.handle();
+
+                // Single task: drain output, then wait for exit, then close
+                tokio::spawn(async move {
+                    // Forward all process output to SSH channel
+                    if let Some(mut output_rx) = output_rx {
+                        while let Some(data) = output_rx.recv().await {
+                            if handle
+                                .data(channel, CryptoVec::from(data.as_slice()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    // Output is fully drained — now send exit status and close
+                    let exit_code = match exit_rx {
+                        Some(rx) => rx.await.unwrap_or(1),
+                        None => 1,
+                    };
+                    let _ = handle.exit_status_request(channel, exit_code).await;
+                    let _ = handle.eof(channel).await;
+                    let _ = handle.close(channel).await;
+                });
             }
             Err(e) => {
+                tracing::error!(channel_id, error = %e, "Failed to spawn exec");
+                session.channel_success(channel)?;
                 let error_msg = format!("Failed to execute command: {}\r\n", e);
                 session.data(channel, CryptoVec::from(error_msg.as_bytes()))?;
                 session.exit_status_request(channel, 1)?;
+                session.close(channel)?;
             }
         }
 
-        session.close(channel)?;
         Ok(())
     }
 
@@ -384,6 +400,25 @@ impl Handler for SshHandler {
         Ok(())
     }
 
+    /// Handle channel EOF from client (client finished sending data)
+    ///
+    /// This drops the stdin writer, which signals EOF to the subprocess.
+    /// The subprocess can then finish processing and exit, triggering
+    /// exit_status/eof/close back to the client.
+    async fn channel_eof(
+        &mut self,
+        channel: ChannelId,
+        _session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let channel_id: u32 = channel.into();
+        tracing::debug!(channel_id, "Channel EOF received");
+
+        // Drop stdin writer to signal EOF to the subprocess
+        self.shell_manager.remove_shell(channel_id).await;
+
+        Ok(())
+    }
+
     /// Handle channel close
     async fn channel_close(
         &mut self,
@@ -393,7 +428,7 @@ impl Handler for SshHandler {
         let channel_id: u32 = channel.into();
         tracing::debug!(channel_id, "Channel closed");
 
-        // Clean up shell process if any
+        // Clean up shell process if any (in case EOF wasn't received)
         self.shell_manager.remove_shell(channel_id).await;
 
         let mut state = self.session_state.lock().await;
@@ -435,10 +470,31 @@ impl Handler for SshHandler {
 
         match name {
             "sftp" if self.config.sftp => {
-                // SFTP would be implemented here
-                session.channel_success(channel)?;
-                let msg = "SFTP subsystem not yet implemented\r\n";
-                session.data(channel, CryptoVec::from(msg.as_bytes()))?;
+                let sftp_server = &self.config.sftp_server;
+                tracing::info!(channel_id, sftp_server, "Spawning SFTP subsystem");
+
+                let handle = session.handle();
+
+                // Spawn sftp-server with direct handle forwarding
+                // (binary protocol on stdout, stderr separate via extended_data)
+                match self
+                    .shell_manager
+                    .spawn_subsystem(channel_id, sftp_server, channel, handle)
+                    .await
+                {
+                    Ok(()) => {
+                        session.channel_success(channel)?;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            channel_id,
+                            error = %e,
+                            sftp_server,
+                            "Failed to spawn SFTP subsystem"
+                        );
+                        session.channel_failure(channel)?;
+                    }
+                }
             }
             _ => {
                 tracing::warn!(subsystem = name, "Unknown or disabled subsystem");
