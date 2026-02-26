@@ -34,8 +34,6 @@ pub use config::SshConfig;
 pub use handler::SshHandler;
 
 use crate::services::{ServiceHandler, StreamDyn};
-
-#[cfg(feature = "ssh")]
 use anyhow::Result;
 #[cfg(feature = "ssh")]
 use auth::PublicKeyAuth;

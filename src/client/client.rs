@@ -165,6 +165,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_create_legacy_handler_for_socks() {
         let handler =
             create_legacy_handler("my-proxy", &SocksConfig::default(), &SshConfig::default());

@@ -29,6 +29,7 @@ pub enum SockratsError {
     Connection(String),
 
     /// SOCKS5 protocol error
+    #[cfg(feature = "socks")]
     #[error("SOCKS5 error: {0}")]
     Socks5(#[from] Socks5Error),
 
@@ -55,6 +56,7 @@ pub enum SockratsError {
 }
 
 /// SOCKS5 specific errors
+#[cfg(feature = "socks")]
 #[derive(Error, Debug)]
 pub enum Socks5Error {
     /// Unsupported SOCKS version
@@ -103,6 +105,7 @@ pub enum Socks5Error {
 }
 
 /// Reply codes for SOCKS5 protocol
+#[cfg(feature = "socks")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Socks5ReplyCode {
@@ -126,12 +129,14 @@ pub enum Socks5ReplyCode {
     AddressTypeNotSupported = 0x08,
 }
 
+#[cfg(feature = "socks")]
 impl From<Socks5ReplyCode> for u8 {
     fn from(code: Socks5ReplyCode) -> Self {
         code as u8
     }
 }
 
+#[cfg(feature = "socks")]
 impl TryFrom<u8> for Socks5ReplyCode {
     type Error = Socks5Error;
 
@@ -151,6 +156,7 @@ impl TryFrom<u8> for Socks5ReplyCode {
     }
 }
 
+#[cfg(feature = "socks")]
 impl From<&io::Error> for Socks5ReplyCode {
     fn from(err: &io::Error) -> Self {
         match err.kind() {
@@ -167,6 +173,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_reply_code_from_u8_valid() {
         assert_eq!(
             Socks5ReplyCode::try_from(0x00).unwrap(),
@@ -207,6 +214,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_reply_code_from_u8_invalid() {
         assert!(Socks5ReplyCode::try_from(0xFF).is_err());
         assert!(Socks5ReplyCode::try_from(0x09).is_err());
@@ -214,6 +222,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_reply_code_to_u8() {
         assert_eq!(u8::from(Socks5ReplyCode::Succeeded), 0x00);
         assert_eq!(u8::from(Socks5ReplyCode::GeneralFailure), 0x01);
@@ -227,6 +236,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_reply_code_from_io_error() {
         let err = io::Error::new(io::ErrorKind::ConnectionRefused, "refused");
         assert_eq!(
@@ -291,6 +301,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_sockrats_error_from_socks5() {
         let socks5_err = Socks5Error::AuthFailed;
         let err: SockratsError = socks5_err.into();
@@ -298,6 +309,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_error_display() {
         let err = Socks5Error::UnsupportedVersion(4);
         assert_eq!(format!("{}", err), "Unsupported SOCKS version: 4");
@@ -334,6 +346,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_reply_code_clone_copy() {
         let code = Socks5ReplyCode::Succeeded;
         let code2 = code;
@@ -341,6 +354,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_socks5_reply_code_debug() {
         let code = Socks5ReplyCode::Succeeded;
         assert_eq!(format!("{:?}", code), "Succeeded");

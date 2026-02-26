@@ -13,9 +13,11 @@ pub use control_channel::ControlChannel;
 pub use data_channel::run_data_channel;
 
 use crate::config::Config;
+#[cfg(feature = "noise")]
+use crate::transport::NoiseTransport;
+use crate::transport::TcpTransport;
 #[cfg(feature = "wireguard")]
 use crate::transport::WireguardTransport;
-use crate::transport::{NoiseTransport, TcpTransport};
 use anyhow::Result;
 use tokio::sync::broadcast;
 
@@ -49,9 +51,14 @@ pub async fn run_client(config: Config, shutdown_rx: broadcast::Receiver<bool>) 
             let client = Client::<TcpTransport>::new(client_config).await?;
             client.run(shutdown_rx).await
         }
+        #[cfg(feature = "noise")]
         crate::config::TransportType::Noise => {
             let client = Client::<NoiseTransport>::new(client_config).await?;
             client.run(shutdown_rx).await
+        }
+        #[cfg(not(feature = "noise"))]
+        crate::config::TransportType::Noise => {
+            anyhow::bail!("Noise transport is not enabled. Recompile with --features noise")
         }
     }
 }

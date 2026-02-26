@@ -4,12 +4,14 @@
 //! for different protocols (TCP, Noise).
 
 mod addr;
+#[cfg(feature = "noise")]
 mod noise;
 mod tcp;
 #[cfg(feature = "wireguard")]
 pub mod wireguard;
 
 pub use addr::AddrMaybeCached;
+#[cfg(feature = "noise")]
 pub use noise::NoiseTransport;
 pub use tcp::TcpTransport;
 #[cfg(feature = "wireguard")]
@@ -117,9 +119,14 @@ pub fn create_transport(config: &TransportConfig) -> Result<Box<dyn TransportDyn
             let transport = TcpTransport::new(config)?;
             Ok(Box::new(transport))
         }
+        #[cfg(feature = "noise")]
         TransportType::Noise => {
             let transport = NoiseTransport::new(config)?;
             Ok(Box::new(transport))
+        }
+        #[cfg(not(feature = "noise"))]
+        TransportType::Noise => {
+            anyhow::bail!("Noise transport is not enabled. Recompile with --features noise")
         }
     }
 }

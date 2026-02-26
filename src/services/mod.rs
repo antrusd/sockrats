@@ -14,11 +14,14 @@
 //!
 //! See `src/services/template/mod.rs` for a documented skeleton.
 
+#[cfg(feature = "socks")]
 pub mod socks;
 pub mod ssh;
 pub mod template;
 
-use crate::config::{ServiceConfig, ServiceType, SocksConfig};
+#[cfg(feature = "socks")]
+use crate::config::SocksConfig;
+use crate::config::{ServiceConfig, ServiceType};
 use anyhow::Result;
 use ssh::SshConfig;
 use std::collections::HashMap;
@@ -27,6 +30,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 // Re-export service handler implementations
+#[cfg(feature = "socks")]
 pub use socks::Socks5ServiceHandler;
 pub use ssh::SshServiceHandler;
 
@@ -160,11 +164,16 @@ impl ServiceRegistry {
 /// arm here.
 pub fn create_service_handler(service: &ServiceConfig) -> Result<Arc<dyn ServiceHandler>> {
     match service.service_type {
+        #[cfg(feature = "socks")]
         ServiceType::Socks5 => {
             let config = service.socks.clone().unwrap_or_default();
             let handler = Socks5ServiceHandler::new(config);
             handler.validate()?;
             Ok(Arc::new(handler))
+        }
+        #[cfg(not(feature = "socks"))]
+        ServiceType::Socks5 => {
+            anyhow::bail!("SOCKS5 feature is not enabled. Recompile with --features socks")
         }
         ServiceType::Ssh => {
             let config = service.ssh.clone().unwrap_or_default();
@@ -179,6 +188,7 @@ pub fn create_service_handler(service: &ServiceConfig) -> Result<Arc<dyn Service
 ///
 /// In legacy mode, the service type is inferred from the service name:
 /// names containing "ssh" create an SSH handler, everything else creates SOCKS5.
+#[cfg(feature = "socks")]
 pub fn create_legacy_handler(
     service_name: &str,
     socks_config: &SocksConfig,
@@ -188,6 +198,20 @@ pub fn create_legacy_handler(
         Arc::new(SshServiceHandler::new(ssh_config.clone()))
     } else {
         Arc::new(Socks5ServiceHandler::new(socks_config.clone()))
+    }
+}
+
+/// Placeholder for when SOCKS5 feature is disabled
+#[cfg(not(feature = "socks"))]
+pub fn create_legacy_handler(
+    service_name: &str,
+    _socks_config: &crate::config::SocksConfig,
+    ssh_config: &SshConfig,
+) -> Arc<dyn ServiceHandler> {
+    if service_name.to_lowercase().contains("ssh") {
+        Arc::new(SshServiceHandler::new(ssh_config.clone()))
+    } else {
+        panic!("SOCKS5 feature is not enabled. Recompile with --features socks")
     }
 }
 
@@ -293,6 +317,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_create_service_handler_socks5() {
         let service = ServiceConfig {
             name: "socks5".to_string(),
@@ -321,6 +346,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_create_legacy_handler_socks5() {
         let handler =
             create_legacy_handler("my-proxy", &SocksConfig::default(), &SshConfig::default());
@@ -328,6 +354,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_create_legacy_handler_ssh() {
         let handler = create_legacy_handler(
             "my-ssh-tunnel",
@@ -338,6 +365,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_create_legacy_handler_ssh_case_insensitive() {
         let handler = create_legacy_handler(
             "MySSHTunnel",

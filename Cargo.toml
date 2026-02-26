@@ -11,7 +11,13 @@ keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
 categories = ["network-programming", "command-line-utilities"]
 
 [features]
-default = ["ssh", "wireguard"]
+default = ["noise", "socks", "ssh", "wireguard"]
+
+# Noise protocol transport (encrypted tunnel)
+noise = ["snowstorm", "base64"]
+
+# SOCKS5 proxy service
+socks = []
 
 # SSH server support
 ssh = ["russh", "ssh-key", "rand", "portable-pty"]
@@ -47,13 +53,12 @@ lazy_static = "1.4"
 socket2 = { version = "0.5", features = ["all"] }
 backoff = { version = "0.4", features = ["tokio"] }
 
-# SOCKS5 protocol
-tokio-stream = "0.1"
+# Multi-service support
 futures = "0.3"
 
-# Noise protocol (mandatory - pure Rust, zero C dependencies, zigbuild friendly)
-snowstorm = { version = "0.4", features = ["stream"], default-features = false }
-base64 = "0.22"
+# Optional Noise protocol transport (pure Rust, zero C dependencies, zigbuild friendly)
+snowstorm = { version = "0.4", optional = true, features = ["stream"], default-features = false }
+base64 = { version = "0.22", optional = true }
 
 # Optional SSH server (russh) - using ring backend instead of aws-lc-rs for zigbuild cross-compilation
 russh = { version = "0.57", optional = true, default-features = false, features = ["ring"] }

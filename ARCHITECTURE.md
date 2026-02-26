@@ -2,7 +2,7 @@
 
 ## Overview
 
-Sockrats is a Rust-based reverse tunneling client that connects to a [rathole](https://github.com/rapiz1/rathole) server and exposes an embedded SOCKS5 proxy and/or SSH server through the tunnel—without binding to any local network interface. The SOCKS5 and SSH servers operate entirely in-memory on tunnel streams.
+Sockrats is a Rust-based reverse tunneling client that connects to a [rathole](https://github.com/rathole-org/rathole) server and exposes an embedded SOCKS5 proxy and/or SSH server through the tunnel—without binding to any local network interface. The SOCKS5 and SSH servers operate entirely in-memory on tunnel streams.
 
 ### Key Features
 
@@ -44,7 +44,7 @@ mod tests {
 - Minimum 80% code coverage enforced via `cargo tarpaulin --fail-under 80`
 - All public functions must have at least one test
 - Edge cases and error paths must be tested
-- Feature-gated code uses `#[cfg(feature = "ssh")]` on tests that require the SSH feature
+- Feature-gated code uses `#[cfg(feature = "...")]` on tests that require optional features (noise, socks, ssh, wireguard)
 
 **Running Tests:**
 ```bash
@@ -161,7 +161,7 @@ sockrats/
 │   │   ├── mod.rs                     # Transport trait, TransportDyn/StreamDyn, create_transport()
 │   │   ├── addr.rs                    # AddrMaybeCached with DNS caching
 │   │   ├── tcp.rs                     # TcpTransport
-│   │   └── noise.rs                   # NoiseTransport (snowstorm, mandatory)
+│   │   └── noise.rs                   # NoiseTransport (snowstorm, feature-gated: "noise")
 │   │
 │   ├── client/                        # Client logic
 │   │   ├── mod.rs                     # run_client() - transport selection entry point
@@ -192,6 +192,7 @@ sockrats/
 │   │   │       ├── forwarder.rs       # UdpForwarder with session management
 │   │   │       └── packet.rs          # UdpPacket encode/decode per RFC 1928
 │   │   │
+│   │   ├── socks/                     # SOCKS5 proxy service (feature-gated: "socks")
 │   │   ├── ssh/                       # Embedded SSH server + SshServiceHandler (feature-gated: "ssh")
 │   │   │   ├── mod.rs                 # SshServiceHandler, handle_ssh_on_stream(), build_russh_config()
 │   │   │   ├── config.rs              # SshConfig with validation
@@ -310,10 +311,19 @@ keywords = ["socks5", "proxy", "tunnel", "rathole", "reverse-proxy"]
 categories = ["network-programming", "command-line-utilities"]
 
 [features]
-default = ["ssh"]
+default = ["noise", "socks", "ssh", "wireguard"]
+
+# Noise protocol transport (encrypted tunnel)
+noise = ["snowstorm", "base64"]
+
+# SOCKS5 proxy service
+socks = []
 
 # SSH server support
 ssh = ["russh", "ssh-key", "rand", "portable-pty"]
+
+# WireGuard tunnel support (userspace, no TUN/TAP)
+wireguard = ["boringtun", "smoltcp", "x25519-dalek"]
 
 [dependencies]
 # Async runtime
@@ -343,19 +353,23 @@ lazy_static = "1.4"
 socket2 = { version = "0.5", features = ["all"] }
 backoff = { version = "0.4", features = ["tokio"] }
 
-# SOCKS5 protocol
-tokio-stream = "0.1"
+# Multi-service support
 futures = "0.3"
 
-# Noise protocol (mandatory - pure Rust, zero C dependencies, zigbuild friendly)
-snowstorm = { version = "0.4", features = ["stream"], default-features = false }
-base64 = "0.22"
+# Optional Noise protocol transport (pure Rust, zero C dependencies, zigbuild friendly)
+snowstorm = { version = "0.4", optional = true, features = ["stream"], default-features = false }
+base64 = { version = "0.22", optional = true }
 
 # Optional SSH server (russh) - using ring backend instead of aws-lc-rs for zigbuild cross-compilation
 russh = { version = "0.57", optional = true, default-features = false, features = ["ring"] }
 ssh-key = { version = "0.6", optional = true, features = ["ed25519", "rsa", "std"] }
 rand = { version = "0.8", optional = true }
 portable-pty = { version = "0.8", optional = true }
+
+# Optional WireGuard tunnel (userspace, no TUN/TAP, pure Rust via boringtun + smoltcp)
+boringtun = { version = "0.7", optional = true, default-features = false }
+smoltcp = { version = "0.12", optional = true, default-features = false, features = [...] }
+x25519-dalek = { version = "2", optional = true, features = ["static_secrets"] }
 
 # Proxy support for outbound connections
 async-http-proxy = { version = "1.2", features = ["runtime-tokio", "basic-auth"] }
@@ -683,9 +697,9 @@ impl Transport for TcpTransport {
 }
 ```
 
-#### Noise Transport (`src/transport/noise.rs`)
+#### Noise Transport (`src/transport/noise.rs`) — Optional
 
-Uses `snowstorm` crate for Noise protocol encryption:
+Feature-gated behind `--features noise` (enabled by default). Uses `snowstorm` crate for Noise protocol encryption:
 
 ```rust
 pub struct NoiseTransport {
@@ -988,7 +1002,9 @@ pub fn create_legacy_handler(
 4. Add variant to `ServiceType` enum in `src/config/client.rs`
 5. Update `create_service_handler()` factory function
 
-### 6. In-Memory SOCKS5 Handler (`src/services/socks/`)
+### 6. In-Memory SOCKS5 Handler (`src/services/socks/`) — Optional
+
+Feature-gated behind `--features socks` (enabled by default).
 
 The SOCKS5 server implements RFC 1928 (SOCKS5) and RFC 1929 (username/password auth).
 
@@ -1502,6 +1518,7 @@ impl PoolManager {
 pub enum SockratsError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[cfg(feature = "socks")]
     #[error("SOCKS5 error: {0}")]
     Socks5(#[from] Socks5Error),
     #[error("Protocol error: {0}")]

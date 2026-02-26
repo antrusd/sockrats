@@ -203,7 +203,9 @@ mod tests {
     use super::*;
     use crate::config::{SocksConfig, TransportConfig};
     use crate::services::ssh::SshConfig;
-    use crate::services::{Socks5ServiceHandler, SshServiceHandler};
+    #[cfg(feature = "socks")]
+    use crate::services::Socks5ServiceHandler;
+    use crate::services::SshServiceHandler;
 
     fn create_test_config() -> ClientConfig {
         ClientConfig {
@@ -229,6 +231,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "socks")]
     fn test_control_channel_socks5_handler() {
         let handler = Socks5ServiceHandler::new(SocksConfig::default());
         assert_eq!(handler.service_type(), "socks5");

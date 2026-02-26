@@ -54,13 +54,16 @@ pub mod transport;
 
 // Backward compatibility re-exports so that `sockrats::socks::*` and
 // `sockrats::ssh::*` continue to work for existing consumers.
+#[cfg(feature = "socks")]
 pub use services::socks;
 pub use services::ssh;
 
 // Re-export commonly used items
 pub use client::run_client;
 pub use config::{load_config, Config};
-pub use error::{SockratsError, Socks5Error};
+pub use error::SockratsError;
+#[cfg(feature = "socks")]
+pub use error::Socks5Error;
 
 /// Version of the Sockrats library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
