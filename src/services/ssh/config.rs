@@ -102,6 +102,11 @@ fn default_connection_timeout() -> u64 {
 }
 
 fn default_shell() -> String {
+    if let Ok(shell) = std::env::var("SHELL") {
+        if !shell.is_empty() {
+            return shell;
+        }
+    }
     #[cfg(unix)]
     {
         "/bin/sh".to_string()
@@ -383,11 +388,49 @@ mod tests {
     }
 
     #[test]
-    fn test_default_shell() {
+    fn test_default_shell_from_env() {
+        // Save original value
+        let original = std::env::var("SHELL").ok();
+        std::env::set_var("SHELL", "/bin/zsh");
+        let shell = default_shell();
+        assert_eq!(shell, "/bin/zsh");
+        // Restore original value
+        match original {
+            Some(v) => std::env::set_var("SHELL", v),
+            None => std::env::remove_var("SHELL"),
+        }
+    }
+
+    #[test]
+    fn test_default_shell_fallback() {
+        // Save original value
+        let original = std::env::var("SHELL").ok();
+        std::env::remove_var("SHELL");
         let shell = default_shell();
         #[cfg(unix)]
         assert_eq!(shell, "/bin/sh");
         #[cfg(windows)]
         assert_eq!(shell, "cmd.exe");
+        // Restore original value
+        if let Some(v) = original {
+            std::env::set_var("SHELL", v);
+        }
+    }
+
+    #[test]
+    fn test_default_shell_empty_env_falls_back() {
+        // Save original value
+        let original = std::env::var("SHELL").ok();
+        std::env::set_var("SHELL", "");
+        let shell = default_shell();
+        #[cfg(unix)]
+        assert_eq!(shell, "/bin/sh");
+        #[cfg(windows)]
+        assert_eq!(shell, "cmd.exe");
+        // Restore original value
+        match original {
+            Some(v) => std::env::set_var("SHELL", v),
+            None => std::env::remove_var("SHELL"),
+        }
     }
 }

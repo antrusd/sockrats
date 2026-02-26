@@ -292,6 +292,16 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
     }
 
     #[test]
+    #[cfg(feature = "ssh")]
+    fn test_parse_key_without_comment() {
+        let content =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
+        let keys = AuthorizedKeys::parse(content).unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys.keys[0].comment, None);
+    }
+
+    #[test]
     fn test_module_compiles_without_ssh_feature() {
         let keys = AuthorizedKeys::new();
         assert!(keys.is_empty());
