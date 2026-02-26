@@ -92,7 +92,7 @@ impl ShellManager {
     pub async fn spawn_shell(
         &self,
         channel_id: u32,
-        shell: &str,
+        shell: &[String],
         channel: ChannelId,
         handle: Handle,
         env_vars: Vec<(String, String)>,
@@ -119,7 +119,7 @@ impl ShellManager {
     async fn spawn_shell_with_pty(
         &self,
         channel_id: u32,
-        shell: &str,
+        shell: &[String],
         channel: ChannelId,
         handle: Handle,
         env_vars: Vec<(String, String)>,
@@ -137,8 +137,11 @@ impl ShellManager {
             pixel_height: pty_cfg.pixel_height,
         })?;
 
-        // Build the command
-        let mut cmd = CommandBuilder::new(shell);
+        // Build the command — first element is program, rest are extra args
+        let mut cmd = CommandBuilder::new(&shell[0]);
+        for arg in &shell[1..] {
+            cmd.arg(arg);
+        }
         cmd.arg("-i");
 
         // Set environment variables
@@ -239,13 +242,16 @@ impl ShellManager {
     async fn spawn_shell_no_pty(
         &self,
         channel_id: u32,
-        shell: &str,
+        shell: &[String],
         channel: ChannelId,
         handle: Handle,
         env_vars: Vec<(String, String)>,
         term_type: String,
     ) -> anyhow::Result<()> {
-        let mut cmd = Command::new(shell);
+        let mut cmd = Command::new(&shell[0]);
+        for arg in &shell[1..] {
+            cmd.arg(arg);
+        }
         cmd.arg("-i");
 
         cmd.stdin(Stdio::piped())
@@ -485,10 +491,13 @@ impl ShellManager {
         &self,
         channel_id: u32,
         command: &str,
-        default_shell: &str,
+        default_shell: &[String],
         env_vars: Vec<(String, String)>,
     ) -> anyhow::Result<()> {
-        let mut cmd = Command::new(default_shell);
+        let mut cmd = Command::new(&default_shell[0]);
+        for arg in &default_shell[1..] {
+            cmd.arg(arg);
+        }
         cmd.arg("-c").arg(command);
 
         cmd.stdin(Stdio::piped())
@@ -654,7 +663,7 @@ mod tests {
         // spawn_exec should register the command in the shell manager
         // so that data() handler can feed stdin to the process
         let result = manager
-            .spawn_exec(42, "echo hello", "/bin/sh", vec![])
+            .spawn_exec(42, "echo hello", &["/bin/sh".to_string()], vec![])
             .await;
         assert!(result.is_ok());
         assert!(manager.has_shell(42).await);
@@ -671,7 +680,7 @@ mod tests {
         let manager = ShellManager::new();
 
         let result = manager
-            .spawn_exec(1, "echo SCP_TEST_OUTPUT", "/bin/sh", vec![])
+            .spawn_exec(1, "echo SCP_TEST_OUTPUT", &["/bin/sh".to_string()], vec![])
             .await;
         assert!(result.is_ok());
 
@@ -703,7 +712,9 @@ mod tests {
         let manager = ShellManager::new();
 
         // `cat` will echo whatever we write to stdin
-        let result = manager.spawn_exec(2, "cat", "/bin/sh", vec![]).await;
+        let result = manager
+            .spawn_exec(2, "cat", &["/bin/sh".to_string()], vec![])
+            .await;
         assert!(result.is_ok());
 
         // Write data to the process via shell manager (like data() handler does)
@@ -738,7 +749,9 @@ mod tests {
         let manager = ShellManager::new();
         let env = vec![("MY_VAR".to_string(), "test_value".to_string())];
 
-        let result = manager.spawn_exec(3, "echo $MY_VAR", "/bin/sh", env).await;
+        let result = manager
+            .spawn_exec(3, "echo $MY_VAR", &["/bin/sh".to_string()], env)
+            .await;
         assert!(result.is_ok());
 
         let output = manager.take_exec_output(3).await;
@@ -766,7 +779,9 @@ mod tests {
         let manager = ShellManager::new();
 
         // Run a command that exits with status 0
-        let result = manager.spawn_exec(4, "true", "/bin/sh", vec![]).await;
+        let result = manager
+            .spawn_exec(4, "true", &["/bin/sh".to_string()], vec![])
+            .await;
         assert!(result.is_ok());
 
         let exit_rx = manager.take_exec_exit(4).await;
@@ -779,7 +794,9 @@ mod tests {
         assert_eq!(exit_code, 0);
 
         // Run a command that exits with status 1
-        let result = manager.spawn_exec(5, "false", "/bin/sh", vec![]).await;
+        let result = manager
+            .spawn_exec(5, "false", &["/bin/sh".to_string()], vec![])
+            .await;
         assert!(result.is_ok());
 
         let exit_rx = manager.take_exec_exit(5).await;

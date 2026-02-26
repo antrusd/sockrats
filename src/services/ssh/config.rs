@@ -76,9 +76,9 @@ pub struct SshConfig {
     #[serde(default = "default_connection_timeout")]
     pub connection_timeout: u64,
 
-    /// Default shell command
+    /// Default shell command and arguments (e.g. ["/bin/bash", "-l"])
     #[serde(default = "default_shell")]
-    pub default_shell: String,
+    pub default_shell: Vec<String>,
 }
 
 fn default_auth_methods() -> Vec<String> {
@@ -101,23 +101,23 @@ fn default_connection_timeout() -> u64 {
     300
 }
 
-fn default_shell() -> String {
+fn default_shell() -> Vec<String> {
     if let Ok(shell) = std::env::var("SHELL") {
         if !shell.is_empty() {
-            return shell;
+            return vec![shell];
         }
     }
     #[cfg(unix)]
     {
-        "/bin/sh".to_string()
+        vec!["/bin/sh".to_string()]
     }
     #[cfg(windows)]
     {
-        "cmd.exe".to_string()
+        vec!["cmd.exe".to_string()]
     }
     #[cfg(not(any(unix, windows)))]
     {
-        "/bin/sh".to_string()
+        vec!["/bin/sh".to_string()]
     }
 }
 
@@ -393,7 +393,7 @@ mod tests {
         let original = std::env::var("SHELL").ok();
         std::env::set_var("SHELL", "/bin/zsh");
         let shell = default_shell();
-        assert_eq!(shell, "/bin/zsh");
+        assert_eq!(shell, vec!["/bin/zsh".to_string()]);
         // Restore original value
         match original {
             Some(v) => std::env::set_var("SHELL", v),
@@ -408,9 +408,9 @@ mod tests {
         std::env::remove_var("SHELL");
         let shell = default_shell();
         #[cfg(unix)]
-        assert_eq!(shell, "/bin/sh");
+        assert_eq!(shell, vec!["/bin/sh".to_string()]);
         #[cfg(windows)]
-        assert_eq!(shell, "cmd.exe");
+        assert_eq!(shell, vec!["cmd.exe".to_string()]);
         // Restore original value
         if let Some(v) = original {
             std::env::set_var("SHELL", v);
@@ -424,9 +424,9 @@ mod tests {
         std::env::set_var("SHELL", "");
         let shell = default_shell();
         #[cfg(unix)]
-        assert_eq!(shell, "/bin/sh");
+        assert_eq!(shell, vec!["/bin/sh".to_string()]);
         #[cfg(windows)]
-        assert_eq!(shell, "cmd.exe");
+        assert_eq!(shell, vec!["cmd.exe".to_string()]);
         // Restore original value
         match original {
             Some(v) => std::env::set_var("SHELL", v),

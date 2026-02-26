@@ -253,7 +253,7 @@ impl Handler for SshHandler {
             .await
         {
             Ok(()) => {
-                tracing::info!(channel_id, shell, "Shell spawned successfully");
+                tracing::info!(channel_id, ?shell, "Shell spawned successfully");
                 session.channel_success(channel)?;
             }
             Err(e) => {
@@ -294,10 +294,10 @@ impl Handler for SshHandler {
         };
 
         // Spawn the command with streaming I/O (supports SCP bidirectional protocol)
-        let shell = &self.config.default_shell;
+        let default_shell = &self.config.default_shell;
         match self
             .shell_manager
-            .spawn_exec(channel_id, &command, shell, env_vars)
+            .spawn_exec(channel_id, &command, default_shell, env_vars)
             .await
         {
             Ok(()) => {
