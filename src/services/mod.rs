@@ -16,14 +16,16 @@
 
 #[cfg(feature = "socks")]
 pub mod socks;
+#[cfg(feature = "ssh")]
 pub mod ssh;
 pub mod template;
+#[cfg(feature = "vncserver")]
+pub mod vncserver;
 
 #[cfg(feature = "socks")]
 use crate::config::SocksConfig;
 use crate::config::{ServiceConfig, ServiceType};
 use anyhow::Result;
-use ssh::SshConfig;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -32,7 +34,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 // Re-export service handler implementations
 #[cfg(feature = "socks")]
 pub use socks::Socks5ServiceHandler;
+#[cfg(feature = "ssh")]
 pub use ssh::SshServiceHandler;
+#[cfg(feature = "vncserver")]
+pub use vncserver::VncServiceHandler;
 
 /// Trait that all service handlers must implement.
 ///
@@ -109,10 +114,10 @@ pub trait ServiceHandler: Send + Sync + Debug {
 /// This is a convenience alias combining the traits needed for service I/O.
 /// It allows service handlers to accept any stream type (TCP, Noise, etc.)
 /// without being generic over the transport.
-pub trait StreamDyn: AsyncRead + AsyncWrite + Unpin + Send + Debug {}
+pub trait StreamDyn: AsyncRead + AsyncWrite + Unpin + Send + Sync + Debug {}
 
 /// Blanket implementation: any type implementing the required traits is a StreamDyn.
-impl<T: AsyncRead + AsyncWrite + Unpin + Send + Debug> StreamDyn for T {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send + Sync + Debug> StreamDyn for T {}
 
 /// Registry that maps service names to their handlers.
 ///
@@ -175,9 +180,17 @@ pub fn create_service_handler(service: &ServiceConfig) -> Result<Arc<dyn Service
         ServiceType::Socks5 => {
             anyhow::bail!("SOCKS5 feature is not enabled. Recompile with --features socks")
         }
+        #[cfg(feature = "ssh")]
         ServiceType::Ssh => {
             let config = service.ssh.clone().unwrap_or_default();
             let handler = SshServiceHandler::new(config);
+            handler.validate()?;
+            Ok(Arc::new(handler))
+        }
+        #[cfg(feature = "vncserver")]
+        ServiceType::VncServer => {
+            let config = service.vnc.clone().unwrap_or_default();
+            let handler = VncServiceHandler::new(config);
             handler.validate()?;
             Ok(Arc::new(handler))
         }
@@ -188,11 +201,11 @@ pub fn create_service_handler(service: &ServiceConfig) -> Result<Arc<dyn Service
 ///
 /// In legacy mode, the service type is inferred from the service name:
 /// names containing "ssh" create an SSH handler, everything else creates SOCKS5.
-#[cfg(feature = "socks")]
+#[cfg(all(feature = "socks", feature = "ssh"))]
 pub fn create_legacy_handler(
     service_name: &str,
     socks_config: &SocksConfig,
-    ssh_config: &SshConfig,
+    ssh_config: &ssh::SshConfig,
 ) -> Arc<dyn ServiceHandler> {
     if service_name.to_lowercase().contains("ssh") {
         Arc::new(SshServiceHandler::new(ssh_config.clone()))
@@ -201,12 +214,26 @@ pub fn create_legacy_handler(
     }
 }
 
-/// Placeholder for when SOCKS5 feature is disabled
-#[cfg(not(feature = "socks"))]
+/// Placeholder for when only SOCKS5 feature is enabled (no SSH)
+#[cfg(all(feature = "socks", not(feature = "ssh")))]
+pub fn create_legacy_handler(
+    service_name: &str,
+    socks_config: &SocksConfig,
+    _ssh_config: &crate::config::client::SshConfig,
+) -> Arc<dyn ServiceHandler> {
+    if service_name.to_lowercase().contains("ssh") {
+        panic!("SSH feature is not enabled. Recompile with --features ssh")
+    } else {
+        Arc::new(Socks5ServiceHandler::new(socks_config.clone()))
+    }
+}
+
+/// Placeholder for when only SSH feature is enabled (no SOCKS5)
+#[cfg(all(not(feature = "socks"), feature = "ssh"))]
 pub fn create_legacy_handler(
     service_name: &str,
     _socks_config: &crate::config::SocksConfig,
-    ssh_config: &SshConfig,
+    ssh_config: &ssh::SshConfig,
 ) -> Arc<dyn ServiceHandler> {
     if service_name.to_lowercase().contains("ssh") {
         Arc::new(SshServiceHandler::new(ssh_config.clone()))
@@ -218,6 +245,8 @@ pub fn create_legacy_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ssh")]
+    use ssh::SshConfig;
 
     // A minimal mock service handler for testing
     #[derive(Debug)]
@@ -325,6 +354,8 @@ mod tests {
             token: "token".to_string(),
             socks: Some(SocksConfig::default()),
             ssh: None,
+            #[cfg(feature = "vncserver")]
+            vnc: None,
         };
 
         let handler = create_service_handler(&service).unwrap();
@@ -332,6 +363,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ssh")]
     fn test_create_service_handler_ssh() {
         let service = ServiceConfig {
             name: "ssh".to_string(),
@@ -339,6 +371,8 @@ mod tests {
             token: "token".to_string(),
             socks: None,
             ssh: None,
+            #[cfg(feature = "vncserver")]
+            vnc: None,
         };
 
         let handler = create_service_handler(&service).unwrap();
@@ -346,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "socks")]
+    #[cfg(all(feature = "socks", feature = "ssh"))]
     fn test_create_legacy_handler_socks5() {
         let handler =
             create_legacy_handler("my-proxy", &SocksConfig::default(), &SshConfig::default());
@@ -354,7 +388,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "socks")]
+    #[cfg(all(feature = "socks", feature = "ssh"))]
     fn test_create_legacy_handler_ssh() {
         let handler = create_legacy_handler(
             "my-ssh-tunnel",
@@ -365,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "socks")]
+    #[cfg(all(feature = "socks", feature = "ssh"))]
     fn test_create_legacy_handler_ssh_case_insensitive() {
         let handler = create_legacy_handler(
             "MySSHTunnel",

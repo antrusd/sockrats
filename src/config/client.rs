@@ -28,7 +28,11 @@ pub enum ServiceType {
     #[default]
     Socks5,
     /// SSH server service
+    #[cfg(feature = "ssh")]
     Ssh,
+    /// VNC server service
+    #[cfg(feature = "vncserver")]
+    VncServer,
 }
 
 /// Service configuration for a single service
@@ -51,6 +55,11 @@ pub struct ServiceConfig {
     /// SSH configuration (used when service_type is Ssh)
     #[serde(default)]
     pub ssh: Option<SshConfig>,
+
+    /// VNC server configuration (used when service_type is VncServer)
+    #[cfg(feature = "vncserver")]
+    #[serde(default)]
+    pub vnc: Option<crate::services::vncserver::VncConfig>,
 }
 
 /// Helper functions for service list operations
@@ -75,9 +84,16 @@ impl ServiceListExt for Vec<ServiceConfig> {
     }
 
     fn ssh_services(&self) -> Vec<&ServiceConfig> {
-        self.iter()
-            .filter(|s| s.service_type == ServiceType::Ssh)
-            .collect()
+        #[cfg(feature = "ssh")]
+        {
+            self.iter()
+                .filter(|s| s.service_type == ServiceType::Ssh)
+                .collect()
+        }
+        #[cfg(not(feature = "ssh"))]
+        {
+            Vec::new()
+        }
     }
 }
 
@@ -150,6 +166,8 @@ impl ClientConfig {
                 token: self.token.clone(),
                 socks: Some(self.socks.clone()),
                 ssh: None,
+                #[cfg(feature = "vncserver")]
+                vnc: None,
             }]
         }
     }
@@ -292,8 +310,11 @@ mod tests {
     #[test]
     fn test_service_type_eq() {
         assert_eq!(ServiceType::Socks5, ServiceType::Socks5);
-        assert_eq!(ServiceType::Ssh, ServiceType::Ssh);
-        assert_ne!(ServiceType::Socks5, ServiceType::Ssh);
+        #[cfg(feature = "ssh")]
+        {
+            assert_eq!(ServiceType::Ssh, ServiceType::Ssh);
+            assert_ne!(ServiceType::Socks5, ServiceType::Ssh);
+        }
     }
 
     #[test]
@@ -303,6 +324,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ssh")]
     fn test_service_list_get_service() {
         let services = vec![
             ServiceConfig {
@@ -311,6 +333,8 @@ mod tests {
                 token: "token1".to_string(),
                 socks: Some(SocksConfig::default()),
                 ssh: None,
+                #[cfg(feature = "vncserver")]
+                vnc: None,
             },
             ServiceConfig {
                 name: "ssh".to_string(),
@@ -318,6 +342,8 @@ mod tests {
                 token: "token2".to_string(),
                 socks: None,
                 ssh: Some(SshConfig::default()),
+                #[cfg(feature = "vncserver")]
+                vnc: None,
             },
         ];
 
@@ -334,6 +360,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ssh")]
     fn test_service_list_filter_by_type() {
         let services = vec![
             ServiceConfig {
@@ -342,6 +369,8 @@ mod tests {
                 token: "token1".to_string(),
                 socks: Some(SocksConfig::default()),
                 ssh: None,
+                #[cfg(feature = "vncserver")]
+                vnc: None,
             },
             ServiceConfig {
                 name: "ssh1".to_string(),
@@ -349,6 +378,8 @@ mod tests {
                 token: "token2".to_string(),
                 socks: None,
                 ssh: Some(SshConfig::default()),
+                #[cfg(feature = "vncserver")]
+                vnc: None,
             },
             ServiceConfig {
                 name: "socks2".to_string(),
@@ -356,6 +387,8 @@ mod tests {
                 token: "token3".to_string(),
                 socks: Some(SocksConfig::default()),
                 ssh: None,
+                #[cfg(feature = "vncserver")]
+                vnc: None,
             },
         ];
 

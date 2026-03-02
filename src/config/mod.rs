@@ -6,6 +6,8 @@ mod client;
 mod pool;
 mod transport;
 
+#[cfg(feature = "vncserver")]
+pub use crate::services::vncserver::VncConfig;
 #[cfg(feature = "wireguard")]
 pub use crate::transport::wireguard::WireguardConfig;
 pub use client::{ClientConfig, Config, ServiceConfig, ServiceListExt, ServiceType, SocksConfig};

@@ -147,8 +147,8 @@ acquire_timeout = 10
 # ============================================================================
 # Multi-Service Configuration (alternative to single-service mode above)
 # ============================================================================
-# Use this to configure multiple services (SOCKS5, SSH) on different rathole
-# service names. Uncomment and configure as needed.
+# Use this to configure multiple services (SOCKS5, SSH, VNC) on different
+# rathole service names. Uncomment and configure as needed.
 # Note: When using multi-service mode, the top-level service_name, token,
 # socks, and ssh settings are ignored.
 #
@@ -169,3 +169,23 @@ acquire_timeout = 10
 # ssh.host_key_path = "/path/to/host_key"
 # ssh.username = "admin"
 # ssh.password = "secret"
+#
+# [[client.services]]
+# name = "vnc"
+# service_type = "vncserver"
+# token = "vnc-token"
+# vnc.enabled = true
+# # Framebuffer resolution — this IS the virtual screen resolution
+# # that VNC viewers will see. (default: 1024x768, max: 8192x8192)
+# vnc.width = 1920
+# vnc.height = 1080
+# # Desktop name shown in VNC viewer title bar (default: "Sockrats VNC")
+# vnc.desktop_name = "Remote Desktop"
+# # VNC authentication password; omit for no authentication
+# vnc.password = "vnc-secret"
+# # JPEG quality for Tight encoding, 0-100 (default: 80)
+# vnc.jpeg_quality = 80
+# # Zlib compression level, 0-9 (default: 6)
+# vnc.compression_level = 6
+# # Maximum framebuffer update rate (default: 30)
+# vnc.max_fps = 30

@@ -3,7 +3,7 @@
 APP_NAME := sockrats
 
 DOCKER_HOST := unix:///run/user/$(shell id -u)/docker.sock
-DOCKER_IMAGE := cargo-zigbuild:0.21.4
+DOCKER_IMAGE := cargo-zigbuild:0.21.5
 
 # Run build
 build:
@@ -24,6 +24,9 @@ check:
 # Run tests
 test:
 	cargo test --all-features
+
+doc:
+	cargo doc --features vncserver -p rfb-encodings --no-deps
 
 # Build and test with no default features
 test-no-default-features:

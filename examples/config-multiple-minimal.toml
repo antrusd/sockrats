@@ -1,5 +1,5 @@
 # Minimal Multi-Service Configuration
-# Demonstrates SOCKS5 and SSH services with minimal settings
+# Demonstrates SOCKS5, SSH, and VNC services with minimal settings
 
 [client]
 remote_addr = "rathole.example.com:2333"
@@ -24,3 +24,13 @@ token = "ssh-token"
 service_type = "ssh"
 ssh.password = "ssh-password"
 ssh.authorized_keys = "/path/to/authorized_keys"
+
+# VNC server service (requires --features vncserver)
+[[client.services]]
+name = "vnc"
+token = "vnc-token"
+service_type = "vncserver"
+vnc.enabled = true
+vnc.width = 1024
+vnc.height = 768
+vnc.password = "vnc-secret"
